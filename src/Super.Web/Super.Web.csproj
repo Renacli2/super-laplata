@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
+    <!-- Sin AOT ni código nativo: no hace falta la carga de trabajo wasm-tools (VS la instala para otra banda del SDK). -->
+    <UsingBrowserRuntimeWorkload>false</UsingBrowserRuntimeWorkload>
+    <WasmNativeWorkload>false</WasmNativeWorkload>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.15" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.15" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ServiceWorker Include="wwwroot\service-worker.js" PublishedContent="wwwroot\service-worker.published.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Super.Contracts\Super.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,8 +1,11 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Super.Api/Super.Api.csproj" />
     <Project Path="src/Super.Application/Super.Application.csproj" />
+    <Project Path="src/Super.Contracts/Super.Contracts.csproj" />
     <Project Path="src/Super.Domain/Super.Domain.csproj" />
     <Project Path="src/Super.Infrastructure/Super.Infrastructure.csproj" />
+    <Project Path="src/Super.Web/Super.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Super.Tests/Super.Tests.csproj" />

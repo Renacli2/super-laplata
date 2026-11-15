@@ -1,0 +1,55 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="scanner" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
+    <div class="scanner-frame">
+        <video @ref="_video" playsinline muted></video>
+        <div class="scanner-guide" aria-hidden="true"></div>
+    </div>
+    <div class="scanner-bar">
+        <p id="scanner-title">@(_error ?? "Apuntá al código de barras del producto")</p>
+        <button type="button" class="btn btn-quiet" @onclick="CancelAsync">@(_error is null ? "Cancelar" : "Cerrar")</button>
+    </div>
+</div>
+
+@code {
+    private ElementReference _video;
+    private string? _error;
+    private bool _closed;
+
+    [Parameter, EditorRequired] public EventCallback<string> OnCode { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var code = await JS.InvokeAsync<string?>("superApp.scan", _video);
+            if (_closed) return;
+            _closed = true;
+            if (code is null) await OnClose.InvokeAsync();
+            else await OnCode.InvokeAsync(code);
+        }
+        catch (JSException ex)
+        {
+            _error = ex.Message.Split('\n')[0];
+            StateHasChanged();
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        _closed = true;
+        await StopAsync();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task StopAsync()
+    {
+        try { await JS.InvokeVoidAsync("superApp.stopScan"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync() => await StopAsync();
+}

@@ -1,0 +1,200 @@
+﻿@page "/"
+@implements IDisposable
+@inject ApiClient Api
+@inject CartState Cart
+@inject IJSRuntime JS
+
+<PageTitle>Tu lista · Super</PageTitle>
+
+<h1 class="page-title">Tu lista</h1>
+
+<div class="search" role="search">
+    <label for="q" class="sr-only">Buscar un producto</label>
+    <input id="q" type="search" class="search-input" placeholder="Buscá un producto o escribí su código"
+           autocomplete="off" enterkeyhint="search" maxlength="60"
+           @bind="_query" @bind:event="oninput" @bind:after="OnQueryChangedAsync" />
+    @if (_canScan)
+    {
+        <button type="button" class="scan-button" @onclick="() => _scanning = true" aria-label="Escanear un código de barras">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M16 8v8" /></svg>
+        </button>
+    }
+</div>
+
+@if (_notice is not null)
+{
+    <p class="notice @(_noticeIsError ? "notice-error" : "")" role="status">@_notice</p>
+}
+
+@if (_query.Trim().Length >= 2)
+{
+    <section class="results" aria-label="Resultados de la búsqueda" aria-busy="@_searching">
+        @if (_results.Count == 0 && !_searching)
+        {
+            <p class="results-empty">No encontramos "@_query.Trim()" en Carrefour, Changomás ni COTO de La Plata.</p>
+        }
+        @foreach (var p in _results)
+        {
+            var best = p.Prices.FirstOrDefault();
+            var inCart = Cart.Contains(p.Ean);
+            <article class="result">
+                <div class="result-text">
+                    <h2 class="result-name">@p.Description</h2>
+                    <p class="result-meta">@Meta(p.Brand, p.Presentation)</p>
+                </div>
+                @if (best is not null)
+                {
+                    <p class="result-price">
+                        <span class="price">@Format.Money(best.Price)</span>
+                        <span class="price-where">en @best.ChainName</span>
+                    </p>
+                }
+                <button type="button" class="btn @(inCart ? "btn-quiet" : "btn-primary")" @onclick="() => AddAsync(p)"
+                        aria-label="@(inCart ? "Sumar uno más de" : "Agregar") @p.Description">
+                    @(inCart ? "Uno más" : "Agregar")
+                </button>
+            </article>
+        }
+    </section>
+}
+
+<section class="cart" aria-labelledby="cart-title">
+    <h2 id="cart-title" class="section-title">
+        @if (Cart.Count == 0) { <text>Todavía no agregaste productos</text> }
+        else { <text>@Format.Products(Cart.Count) en la lista</text> }
+    </h2>
+
+    @if (Cart.Count == 0)
+    {
+        <p class="cart-empty">Buscá lo que comprás siempre@(_canScan ? " o escaneá el código de barras" : "") y te decimos en qué supermercado de La Plata sale menos.</p>
+    }
+    else
+    {
+        <ul class="cart-list">
+            @foreach (var item in Cart.Items)
+            {
+                <li class="cart-item">
+                    <div class="cart-text">
+                        <span class="cart-name">@item.Description</span>
+                        <span class="cart-meta">
+                            @if (item.BestPrice is { } price) { <text>desde @Format.Money(price)</text> }
+                            else { <text>sin precio</text> }
+                        </span>
+                    </div>
+                    <div class="stepper" role="group" aria-label="Cantidad de @item.Description">
+                        <button type="button" @onclick="() => Cart.SetQuantityAsync(item.Ean, item.Quantity - 1)"
+                                aria-label="@(item.Quantity == 1 ? "Quitar" : "Uno menos")">@(item.Quantity == 1 ? "×" : "−")</button>
+                        <output aria-live="polite">@item.Quantity</output>
+                        <button type="button" @onclick="() => Cart.SetQuantityAsync(item.Ean, item.Quantity + 1)" aria-label="Uno más">+</button>
+                    </div>
+                </li>
+            }
+        </ul>
+        <button type="button" class="link-button" @onclick="Cart.ClearAsync">Vaciar la lista</button>
+    }
+</section>
+
+@if (Cart.Count > 0)
+{
+    <div class="action-bar">
+        <a class="action-compare" href="comparar">
+            <span>Comparar @Format.Products(Cart.Count)</span>
+            <span class="action-estimate">desde @Format.Money(Cart.EstimatedTotal)</span>
+        </a>
+    </div>
+}
+
+@if (_scanning)
+{
+    <Scanner OnCode="OnScannedAsync" OnClose="() => _scanning = false" />
+}
+
+@code {
+    private string _query = "";
+    private List<ProductDto> _results = [];
+    private bool _searching;
+    private bool _canScan;
+    private bool _scanning;
+    private string? _notice;
+    private bool _noticeIsError;
+    private CancellationTokenSource? _searchCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Cart.Changed += StateHasChanged;
+        await Cart.LoadAsync();
+        try { _canScan = await JS.InvokeAsync<bool>("superApp.canScan"); }
+        catch (JSException) { _canScan = false; }
+    }
+
+    private async Task OnQueryChangedAsync()
+    {
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var ct = _searchCts.Token;
+        var text = _query.Trim();
+        if (text.Length < 2)
+        {
+            _results = [];
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(250, ct);
+            _searching = true;
+            _results = (await Api.SearchAsync(text, ct)).ToList();
+            _notice = null;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (ApiException ex)
+        {
+            Show(ex.Message, error: true);
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested) _searching = false;
+        }
+    }
+
+    private async Task AddAsync(ProductDto product)
+    {
+        await Cart.AddAsync(product);
+        Show($"Agregaste {product.Description}.");
+    }
+
+    private async Task OnScannedAsync(string code)
+    {
+        _scanning = false;
+        try
+        {
+            var product = await Api.FindAsync(code);
+            if (product is null)
+                Show($"El código {code} no tiene precio en Carrefour, Changomás ni COTO de La Plata.", error: true);
+            else
+                await AddAsync(product);
+        }
+        catch (ApiException ex)
+        {
+            Show(ex.Message, error: true);
+        }
+    }
+
+    private void Show(string message, bool error = false)
+    {
+        _notice = message;
+        _noticeIsError = error;
+    }
+
+    private static string Meta(string brand, string presentation) =>
+        string.Join(", ", new[] { brand, presentation }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    public void Dispose()
+    {
+        Cart.Changed -= StateHasChanged;
+        _searchCts?.Cancel();
+    }
+}

@@ -1,6 +1,6 @@
 # Super — comparador de carritos de supermercado (La Plata)
 
-Base de la solución (.NET 10). Estado: **Fase 1–2 completa**: importador, base de datos e ingesta. Sin API ni UI todavía.
+Solución .NET 10. Estado: importador, base de datos, ingesta, API y app instalable (PWA) para celular y Windows.
 
 ## Qué hay
 
@@ -9,9 +9,52 @@ Base de la solución (.NET 10). Estado: **Fase 1–2 completa**: importador, bas
 | `src/Super.Domain` | `Chain` (Carrefour, Changomás, COTO), `Ean` (normalización a 13 dígitos, dígito de control, códigos de peso variable) |
 | `src/Super.Application` | `ComparisonEngine`: precio mínimo por ítem, total por cadena, regla del umbral (3 % por defecto). `IPriceQuoteSource` |
 | `src/Super.Infrastructure` | Importador de SEPA (`Sepa/`), lector del dump (`SepaDump`), base PostgreSQL con EF Core (`Persistence/`), ingesta (`Ingestion/`) |
-| `tests/Super.Tests` | xUnit: EAN, motor, importador, lector del dump, e integración con PostgreSQL |
+| `src/Super.Contracts` | Contratos JSON entre la API y la app |
+| `src/Super.Api` | API ASP.NET Core (búsqueda, producto por código, comparación, estado). Sirve también la app |
+| `src/Super.Web` | App Blazor WebAssembly instalable (PWA): lista, búsqueda, escáner de códigos, resultado |
+| `tests/Super.Tests` | xUnit: EAN, motor, importador, lector del dump, integración con PostgreSQL y API |
 | `tools/Super.SepaProbe` | Consola para probar el importador con los CSV de un comercio, sin base |
 | `tools/Super.Ingest` | Consola: migraciones, ingesta del dump, estado y comparación de un carrito contra la base |
+
+## App (celular y Windows)
+
+Es una sola app web instalable (PWA): el mismo código se instala en Android, iPhone y Windows desde el navegador.
+La API la sirve en el mismo sitio, así que hay un solo programa para publicar.
+
+Correrla en la PC:
+
+```bash
+dotnet run --project src/Super.Api --launch-profile http
+```
+
+y abrir http://localhost:5234. En Windows, Edge o Chrome muestran "Instalar aplicación" en la barra de direcciones
+(en `localhost` funciona sin HTTPS).
+
+Versión de producción:
+
+```bash
+dotnet publish src/Super.Api -c Release -o publish
+```
+
+`publish/` contiene `Super.Api.exe` (~35 MB) y requiere el runtime de ASP.NET Core 10 instalado. Necesita la conexión a PostgreSQL en
+`ConnectionStrings__Super` (variable de entorno) y escuchar detrás de HTTPS.
+
+**Instalar en el celular:** el navegador solo instala la app (y solo deja usar la cámara) si se abre con **HTTPS** desde un
+dominio. Con `http://IP-de-la-PC:puerto` en la misma red Wi-Fi se puede usar, pero no instalar ni escanear.
+Una vez publicada con HTTPS:
+
+- Android (Chrome o Edge): menú ⋮ → "Instalar aplicación".
+- iPhone (Safari): Compartir → "Agregar a inicio".
+- Windows (Edge o Chrome): ícono de instalar en la barra de direcciones.
+
+**Escáner:** usa `BarcodeDetector`, que hoy tienen Chrome y Edge en Android. En iPhone y en Windows el botón no aparece
+y el código se escribe en el buscador (acepta el número tal como figura debajo de las barras).
+
+**Sin conexión:** la app (pantallas y lista guardada) abre sin internet; buscar y comparar necesitan conexión.
+
+Probado el 15/11/2026: 68 tests; app en el navegador integrado (búsqueda, lista, comparación, tildado, lista guardada al
+recargar, vista de celular y escritorio, tema claro y oscuro); versión publicada en Edge, con el service worker activo.
+El navegador integrado de Claude no registra service workers, por eso esa parte se verificó en Edge.
 
 ## Base de datos
 
@@ -96,10 +139,11 @@ Los precios de $0,10 de Changomás están todos en esos códigos, por eso "preci
 
 ## Pendiente (siguientes fases)
 
-Descarga automática del dump y programación diaria de la ingesta, aplicar promociones,
-clasificación por categoría, API, PWA Blazor WASM, login con Google, grupos y listas, modo compra con escaneo.
+Publicar con HTTPS (hosting a definir), descarga automática del dump y programación diaria de la ingesta,
+aplicar promociones, búsqueda sin acentos (unaccent),
+clasificación por categoría, login con Google, grupos y listas compartidas, escáner para iPhone y Windows.
 
 ## Estado de compilación
 
-15/11/2026: compila sin advertencias con el SDK 10.0.301 y pasan los 56 tests (incluidos 5 de integración con PostgreSQL 17).
+15/11/2026: compila sin advertencias con el SDK 10.0.301 y pasan los 68 tests (17 de integración con PostgreSQL 17).
 `Super.SepaProbe` probado contra el dump real del 13/11/2026 (ver tabla arriba).

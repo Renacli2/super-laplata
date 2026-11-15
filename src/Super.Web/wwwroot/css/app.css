@@ -1,0 +1,526 @@
+/* Super · La Plata
+   Una columna, alineada a la izquierda. Lo único llamativo es el cartel de precio del resultado. */
+
+:root {
+    --paper: #F6F7F4;
+    --surface: #FFFFFF;
+    --ink: #16233F;
+    --muted: #5D6679;
+    --line: #D8DCE2;
+    --tag: #FFD23F;
+    --tag-ink: #16233F;
+    --danger: #A4262C;
+    --focus: #2F6FEB;
+    /* Colores de dato para distinguir cadenas (no son colores de marca). */
+    --c-carrefour: #0F7C7C;
+    --c-changomas: #7A3E8E;
+    --c-coto: #B5651D;
+
+    --font-text: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+
+    --step--1: 0.875rem;
+    --step-0: 1rem;
+    --step-1: 1.25rem;
+    --step-2: 1.625rem;
+    --step-3: 2.125rem;
+
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2.5rem;
+
+    --radius-control: 10px;
+    --radius-tag: 6px 6px 22px 6px;
+    --bar-height: 4.25rem;
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --paper: #10172A;
+        --surface: #18213A;
+        --ink: #EEF1F6;
+        --muted: #A3ABBC;
+        --line: #2C3753;
+        --tag: #FFD23F;
+        --tag-ink: #16233F;
+        --danger: #FF8A8F;
+        --focus: #7FA8FF;
+        --c-carrefour: #4FC1C1;
+        --c-changomas: #C792DA;
+        --c-coto: #E7A15E;
+        color-scheme: dark;
+    }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-text);
+    font-size: var(--step-0);
+    line-height: 1.5;
+}
+
+h1, h2, h3, p, ul { margin: 0; }
+ul { padding: 0; list-style: none; }
+a { color: inherit; }
+button, input { font: inherit; color: inherit; }
+
+:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* ---------- Estructura ---------- */
+
+.shell {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 0 var(--space-4) calc(var(--bar-height) + var(--space-6) + env(safe-area-inset-bottom));
+}
+
+.masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: calc(var(--space-4) + env(safe-area-inset-top)) 0 var(--space-4);
+}
+
+.wordmark {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    text-decoration: none;
+}
+
+.wordmark-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--step-2);
+    line-height: 1;
+    letter-spacing: -0.01em;
+}
+
+.wordmark-place {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: var(--step-1);
+    color: var(--muted);
+}
+
+.freshness {
+    font-size: var(--step--1);
+    color: var(--muted);
+    text-align: right;
+}
+
+.freshness-off { color: var(--danger); }
+
+.page { display: grid; gap: var(--space-5); }
+
+.page-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-3);
+    line-height: 1.05;
+}
+
+.section-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-1);
+    line-height: 1.2;
+    margin-bottom: var(--space-3);
+}
+
+/* ---------- Controles ---------- */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0 var(--space-4);
+    border-radius: var(--radius-control);
+    border: 1px solid transparent;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-primary { background: var(--ink); color: var(--paper); }
+.btn-quiet { background: transparent; border-color: var(--line); }
+
+.link-button {
+    justify-self: start;
+    margin-top: var(--space-3);
+    padding: var(--space-2) 0;
+    background: none;
+    border: 0;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+.back {
+    justify-self: start;
+    color: var(--muted);
+    text-underline-offset: 3px;
+}
+
+/* ---------- Búsqueda ---------- */
+
+.search {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    background: var(--paper);
+}
+
+.search-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 3rem;
+    padding: 0 var(--space-4);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    font-size: 1.0625rem; /* 17px: evita el zoom automático de iOS */
+}
+
+.search-input::placeholder { color: var(--muted); }
+.search-input:focus { border-color: var(--ink); outline: none; }
+.search-input:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+.scan-button {
+    flex: none;
+    width: 3rem;
+    height: 3rem;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--tag);
+    color: var(--tag-ink);
+    cursor: pointer;
+}
+
+.scan-button svg {
+    width: 1.5rem; height: 1.5rem;
+    fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+}
+
+.notice {
+    padding: var(--space-3) var(--space-4);
+    border-left: 4px solid var(--ink);
+    background: var(--surface);
+}
+
+.notice-error { border-left-color: var(--danger); }
+
+.results { display: grid; }
+
+.results-empty, .cart-empty, .fine-print { color: var(--muted); max-width: 34rem; }
+
+.result {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "text text" "price action";
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-4) 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.result-text { grid-area: text; }
+.result-price { grid-area: price; display: flex; align-items: baseline; gap: var(--space-2); }
+.result .btn { grid-area: action; }
+
+.result-name { font-size: var(--step-0); font-weight: 500; line-height: 1.35; }
+.result-meta, .cart-meta, .price-where { font-size: var(--step--1); color: var(--muted); }
+
+.price {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-1);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Lista ---------- */
+
+.cart { display: grid; }
+
+.cart-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.cart-text { display: grid; min-width: 0; }
+.cart-name { font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+
+.stepper {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-control);
+}
+
+.stepper button {
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 0;
+    background: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+}
+
+.stepper output {
+    min-width: 2ch;
+    text-align: center;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-1);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Barra fija para comparar: queda al alcance del pulgar. */
+.action-bar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 3;
+    padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--paper) 70%, transparent);
+}
+
+.action-compare {
+    max-width: 40rem;
+    margin: 0 auto;
+    min-height: var(--bar-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: 0 var(--space-5);
+    border-radius: var(--radius-control);
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-1);
+    text-decoration: none;
+}
+
+.action-estimate { font-family: var(--font-text); font-weight: 500; font-size: var(--step--1); opacity: 0.85; }
+
+/* ---------- Cartel de precio (el resultado) ---------- */
+
+.tag {
+    position: relative;
+    padding: var(--space-5) var(--space-5) var(--space-5) calc(var(--space-5) + 0.75rem);
+    border-radius: var(--radius-tag);
+    background: var(--tag);
+    color: var(--tag-ink);
+    transform-origin: top left;
+    animation: tag-hang 420ms cubic-bezier(.2, .9, .3, 1.2) both;
+}
+
+/* Perforación del cartel de góndola. */
+.tag::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0.85rem;
+    width: 0.7rem;
+    height: 0.7rem;
+    margin-top: -0.35rem;
+    border-radius: 50%;
+    background: var(--paper);
+}
+
+.tag-verdict {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-2);
+    line-height: 1.1;
+    max-width: 22ch;
+}
+
+.tag-price {
+    display: flex;
+    align-items: flex-start;
+    margin: var(--space-2) 0 var(--space-3);
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 0.85;
+    font-variant-numeric: tabular-nums;
+}
+
+.tag-currency { font-size: 2.25rem; margin: 0.35rem 0.25rem 0 0; }
+.tag-amount { font-size: clamp(4rem, 20vw, 6.5rem); letter-spacing: -0.02em; }
+.tag-cents { font-size: 2.25rem; margin-top: 0.35rem; }
+
+.tag-note { max-width: 34rem; font-weight: 500; }
+.tag-note + .tag-note { margin-top: var(--space-1); }
+
+@keyframes tag-hang {
+    from { transform: rotate(-3deg); opacity: 0; }
+    to { transform: rotate(0); opacity: 1; }
+}
+
+/* ---------- Totales por cadena ---------- */
+
+.chains { display: grid; gap: var(--space-3); }
+
+.chain {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-1) var(--space-4);
+    align-items: baseline;
+}
+
+.chain-name { font-weight: 600; }
+.chain-total { font-family: var(--font-display); font-weight: 600; font-size: var(--step-1); font-variant-numeric: tabular-nums; }
+
+.chain-bar {
+    grid-column: 1 / -1;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--chain) var(--w), var(--line) var(--w));
+}
+
+.chain-incomplete .chain-total { font-family: var(--font-text); font-weight: 500; font-size: var(--step--1); color: var(--muted); }
+.chain-incomplete .chain-bar { background: repeating-linear-gradient(90deg, var(--line) 0 6px, transparent 6px 10px); }
+
+.chain-carrefour { --chain: var(--c-carrefour); }
+.chain-changomas { --chain: var(--c-changomas); }
+.chain-coto { --chain: var(--c-coto); }
+
+/* ---------- Plan de compra ---------- */
+
+.plan + .plan { margin-top: var(--space-5); }
+
+.plan-head {
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: var(--space-2);
+    border-bottom: 3px solid var(--chain);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-1);
+}
+
+.plan-line {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.plan-line label { display: flex; gap: var(--space-3); align-items: flex-start; cursor: pointer; min-width: 0; }
+.plan-line input { width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; flex: none; accent-color: var(--ink); }
+.plan-qty { flex: none; font-variant-numeric: tabular-nums; color: var(--muted); }
+.plan-name { overflow-wrap: anywhere; }
+.plan-price { flex: none; font-variant-numeric: tabular-nums; font-weight: 500; }
+.plan-line.is-picked .plan-name, .plan-line.is-picked .plan-price { text-decoration: line-through; color: var(--muted); }
+
+.missing { display: grid; gap: var(--space-1); margin-bottom: var(--space-2); }
+.missing li::before { content: "– "; color: var(--muted); }
+
+.fine-print { font-size: var(--step--1); }
+
+/* ---------- Escáner ---------- */
+
+.scanner {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    background: #000;
+    color: #fff;
+}
+
+.scanner-frame { position: relative; overflow: hidden; }
+.scanner video { width: 100%; height: 100%; object-fit: cover; }
+
+.scanner-guide {
+    position: absolute;
+    inset: 35% 10%;
+    border: 3px solid var(--tag);
+    border-radius: 12px;
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+}
+
+.scanner-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+}
+
+.scanner-bar .btn-quiet { border-color: rgba(255, 255, 255, 0.5); color: #fff; }
+
+/* ---------- Carga y errores ---------- */
+
+.boot {
+    min-height: 100vh;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--space-2);
+}
+
+.boot-text { color: var(--muted); }
+
+.empty { display: grid; gap: var(--space-3); }
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    padding: var(--space-4);
+    background: var(--danger);
+    color: #fff;
+}
+
+#blazor-error-ui .reload { color: #fff; font-weight: 600; margin-left: var(--space-3); }
+#blazor-error-ui .dismiss { float: right; border: 0; background: none; color: #fff; font-size: 1.5rem; line-height: 1; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+    .tag { animation: none; }
+}
+
+@media (min-width: 48rem) {
+    .shell { padding-top: var(--space-5); }
+    .result { grid-template-columns: 1fr auto auto; grid-template-areas: "text price action"; }
+}

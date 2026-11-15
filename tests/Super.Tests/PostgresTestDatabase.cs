@@ -56,7 +56,7 @@ public abstract class PostgresTestBase : IAsyncLifetime
         await db.Database.MigrateAsync();
     }
 
-    public async Task DisposeAsync()
+    public virtual async Task DisposeAsync()
     {
         if (_databaseName is null || _adminConnection is null) return;
         NpgsqlConnection.ClearAllPools();

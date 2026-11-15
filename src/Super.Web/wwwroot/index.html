@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Super · La Plata</title>
+    <meta name="description" content="Compará tu lista del súper entre Carrefour, Changomás y COTO de La Plata." />
+    <meta name="theme-color" content="#16233F" />
+    <base href="/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="icon" type="image/png" href="icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Super" />
+</head>
+
+<body>
+    <div id="app">
+        <div class="boot" role="status">
+            <span class="wordmark-name">Super</span>
+            <span class="boot-text">Cargando tu lista…</span>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui" role="alert">
+        Algo falló en la app.
+        <a href="." class="reload">Volver a cargar</a>
+        <button type="button" class="dismiss" aria-label="Cerrar">×</button>
+    </div>
+    <script src="js/super.js"></script>
+    <!-- Nombre sin huella: el index.html publicado por la API no reemplaza los marcadores #[.{fingerprint}]. -->
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });
+    </script>
+</body>
+
+</html>

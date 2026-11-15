@@ -1,60 +1,79 @@
 # Super — comparador de carritos de supermercado (La Plata)
 
-Solución .NET 10. Estado: importador, base de datos, ingesta, API y app instalable (PWA) para celular y Windows.
+Solución .NET 10. La app publicada no usa servidor ni base de datos: es una app instalable (PWA) en GitHub Pages
+que descarga los productos y precios del día como archivos, y todo lo demás pasa en el celular.
+
+## Cómo se usa
+
+- **Miembros:** buscan productos (por nombre o escaneando el código), arman su pedido y tocan **Enviar pedido**:
+  se comparte un link por WhatsApp (o donde sea) a quien hace las compras. No ven precios.
+- **Administrador** (quien hace las compras; se activa en *Ajustes* de su celular): abre los links que le mandan
+  y los suma a su lista, con quién pidió cada cosa. Antes de salir toca **Comparar precios**: la app le dice si
+  conviene comprar todo en un supermercado o repartir, y qué llevar en cada uno, con casillas para ir tachando.
 
 ## Qué hay
 
 | Proyecto | Contenido |
 |---|---|
 | `src/Super.Domain` | `Chain` (Carrefour, Changomás, COTO), `Ean` (normalización a 13 dígitos, dígito de control, códigos de peso variable) |
-| `src/Super.Application` | `ComparisonEngine`: precio mínimo por ítem, total por cadena, regla del umbral (3 % por defecto). `IPriceQuoteSource` |
-| `src/Super.Infrastructure` | Importador de SEPA (`Sepa/`), lector del dump (`SepaDump`), base PostgreSQL con EF Core (`Persistence/`), ingesta (`Ingestion/`) |
-| `src/Super.Contracts` | Contratos JSON entre la API y la app |
-| `src/Super.Api` | API ASP.NET Core (búsqueda, producto por código, comparación, estado). Sirve también la app |
-| `src/Super.Web` | App Blazor WebAssembly instalable (PWA): lista, búsqueda, escáner de códigos, resultado |
-| `tests/Super.Tests` | xUnit: EAN, motor, importador, lector del dump, integración con PostgreSQL y API |
-| `tools/Super.SepaProbe` | Consola para probar el importador con los CSV de un comercio, sin base |
-| `tools/Super.Ingest` | Consola: migraciones, ingesta del dump, estado y comparación de un carrito contra la base |
+| `src/Super.Application` | `ComparisonEngine` (umbral 3 %), `CatalogSearch` (búsqueda sin acentos), `OrderLink` (pedidos en un link) |
+| `src/Super.Infrastructure` | Importador y descarga de SEPA (`Sepa/`), exportador de datos estáticos (`Export/`), PostgreSQL con EF Core (`Persistence/`), ingesta (`Ingestion/`) |
+| `src/Super.Contracts` | Formato de los archivos de datos y de la API |
+| `src/Super.Web` | App Blazor WebAssembly instalable (PWA) |
+| `src/Super.Api` | API sobre PostgreSQL (opcional: para consultas en la PC; la app publicada no la usa) |
+| `tests/Super.Tests` | xUnit: EAN, motor, búsqueda, links de pedido, importador, exportador, integración con PostgreSQL y API |
+| `tools/Super.Export` | Genera los archivos de datos de la app desde el dump (o lo descarga) |
+| `tools/Super.Ingest`, `tools/Super.SepaProbe` | Consolas para la base PostgreSQL local y para probar el importador |
 
-## App (celular y Windows)
+## Datos de la app
 
-Es una sola app web instalable (PWA): el mismo código se instala en Android, iPhone y Windows desde el navegador.
-La API la sirve en el mismo sitio, así que hay un solo programa para publicar.
+`Super.Export` lee el dump diario de SEPA y genera tres archivos (con el dump del 13/11/2026: 43.319 productos):
 
-Correrla en la PC:
-
-```bash
-dotnet run --project src/Super.Api --launch-profile http
-```
-
-y abrir http://localhost:5234. En Windows, Edge o Chrome muestran "Instalar aplicación" en la barra de direcciones
-(en `localhost` funciona sin HTTPS).
-
-Versión de producción:
+| Archivo | Qué tiene | Tamaño (comprimido) | Lo baja |
+|---|---|---|---|
+| `data/version.json` | fecha de los precios | < 1 KB | todos |
+| `data/catalog.json` | código, descripción, marca y presentación | ~630 KB | todos, para buscar |
+| `data/prices.json` | precio de lista mínimo de cada cadena en La Plata | ~280 KB | solo el admin, al comparar |
 
 ```bash
-dotnet publish src/Super.Api -c Release -o publish
+dotnet run --project tools/Super.Export -- C:\ruta\sepa_viernes.zip src/Super.Web/wwwroot/data
+dotnet run --project tools/Super.Export -- --download src/Super.Web/wwwroot/data          # baja el dump de hoy
 ```
 
-`publish/` contiene `Super.Api.exe` (~35 MB) y requiere el runtime de ASP.NET Core 10 instalado. Necesita la conexión a PostgreSQL en
-`ConnectionStrings__Super` (variable de entorno) y escuchar detrás de HTTPS.
+El service worker guarda la última copia de los datos: sin señal, la app busca y compara con los últimos precios.
 
-**Instalar en el celular:** el navegador solo instala la app (y solo deja usar la cámara) si se abre con **HTTPS** desde un
-dominio. Con `http://IP-de-la-PC:puerto` en la misma red Wi-Fi se puede usar, pero no instalar ni escanear.
-Una vez publicada con HTTPS:
+## Publicación: GitHub Pages (gratis)
 
-- Android (Chrome o Edge): menú ⋮ → "Instalar aplicación".
-- iPhone (Safari): Compartir → "Agregar a inicio".
-- Windows (Edge o Chrome): ícono de instalar en la barra de direcciones.
+El workflow [`.github/workflows/publicar.yml`](.github/workflows/publicar.yml) corre todos los días a las 17:30
+(Argentina), con cada push a `main` y a mano desde *Actions → Run workflow*: corre los tests, descarga el dump del día,
+genera los datos, compila la app y la publica en `https://<usuario>.github.io/<repo>/`.
 
-**Escáner:** usa `BarcodeDetector`, que hoy tienen Chrome y Edge en Android. En iPhone y en Windows el botón no aparece
-y el código se escribe en el buscador (acepta el número tal como figura debajo de las barras).
+Requisitos: el repositorio tiene que ser **público** (GitHub Pages gratis) y en *Settings → Pages* elegir
+*Source: GitHub Actions*. Si la descarga falla un día, la corrida queda en rojo y la app sigue con los datos anteriores.
+GitHub pausa los workflows programados si el repositorio pasa 60 días sin cambios: se reactivan desde *Actions*.
 
-**Sin conexión:** la app (pantallas y lista guardada) abre sin internet; buscar y comparar necesitan conexión.
+**Instalar:** Android (Chrome o Edge): menú ⋮ → *Instalar aplicación*. iPhone (Safari): Compartir → *Agregar a inicio*.
+Windows (Edge o Chrome): ícono de instalar en la barra de direcciones.
 
-Probado el 15/11/2026: 68 tests; app en el navegador integrado (búsqueda, lista, comparación, tildado, lista guardada al
-recargar, vista de celular y escritorio, tema claro y oscuro); versión publicada en Edge, con el service worker activo.
-El navegador integrado de Claude no registra service workers, por eso esa parte se verificó en Edge.
+**Escáner:** usa `BarcodeDetector`, que tienen Chrome y Edge en Android. En iPhone y en Windows el botón no aparece
+y el código se escribe en el buscador.
+
+**En iPhone**, la app instalada en la pantalla de inicio guarda sus datos aparte de Safari: conviene abrir los links de
+pedido desde la app (copiar y pegar en el navegador de la app) o usar siempre Safari.
+
+## Probar en la PC
+
+```bash
+dotnet run --project tools/Super.Export -- C:\ruta\sepa_viernes.zip src/Super.Web/wwwroot/data
+dotnet run --project src/Super.Web --launch-profile http
+```
+
+y abrir http://localhost:5039 (la carpeta `wwwroot/data` no se versiona).
+
+Probado el 15/11/2026: 98 tests; flujo completo en el navegador integrado simulando GitHub Pages (subcarpeta `/super-laplata/`,
+`404.html` para las rutas): búsqueda sin acentos, pedido de un miembro con nombre, link generado, admin que recibe dos
+pedidos y los une, comparación con los precios reales del 13/11. El navegador integrado no registra service workers;
+eso se verificó antes en Edge.
 
 ## Base de datos
 
@@ -139,11 +158,10 @@ Los precios de $0,10 de Changomás están todos en esos códigos, por eso "preci
 
 ## Pendiente (siguientes fases)
 
-Publicar con HTTPS (hosting a definir), descarga automática del dump y programación diaria de la ingesta,
-aplicar promociones, búsqueda sin acentos (unaccent),
-clasificación por categoría, login con Google, grupos y listas compartidas, escáner para iPhone y Windows.
+Crear el repositorio público en GitHub y activar Pages, aplicar promociones, clasificación por categoría,
+historial de precios, escáner para iPhone y Windows, listas compartidas en tiempo real (necesitaría un servidor).
 
 ## Estado de compilación
 
-15/11/2026: compila sin advertencias con el SDK 10.0.301 y pasan los 68 tests (17 de integración con PostgreSQL 17).
+15/11/2026: compila sin advertencias con el SDK 10.0.301 y pasan los 98 tests (19 de integración con PostgreSQL 17, que se omiten sin servidor).
 `Super.SepaProbe` probado contra el dump real del 13/11/2026 (ver tabla arriba).

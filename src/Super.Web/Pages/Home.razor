@@ -1,54 +1,60 @@
 ﻿@page "/"
 @implements IDisposable
-@inject ApiClient Api
+@inject DataStore Data
 @inject CartState Cart
+@inject Settings Settings
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
-<PageTitle>Tu lista · Super</PageTitle>
+<PageTitle>@(Settings.IsAdmin ? "Lista de compras" : "Tu pedido") · Super</PageTitle>
 
-<h1 class="page-title">Tu lista</h1>
+<h1 class="page-title">@(Settings.IsAdmin ? "Lista de compras" : "Tu pedido")</h1>
 
 <div class="search" role="search">
     <label for="q" class="sr-only">Buscar un producto</label>
     <input id="q" type="search" class="search-input" placeholder="Buscá un producto o escribí su código"
-           autocomplete="off" enterkeyhint="search" maxlength="60"
+           autocomplete="off" enterkeyhint="search" maxlength="60" disabled="@(_catalog is null)"
            @bind="_query" @bind:event="oninput" @bind:after="OnQueryChangedAsync" />
     @if (_canScan)
     {
-        <button type="button" class="scan-button" @onclick="() => _scanning = true" aria-label="Escanear un código de barras">
+        <button type="button" class="scan-button" @onclick="() => _scanning = true" aria-label="Escanear un código de barras"
+                disabled="@(_catalog is null)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M16 8v8" /></svg>
         </button>
     }
 </div>
 
-@if (_notice is not null)
+@if (_catalog is null && _loadError is null)
 {
-    <p class="notice @(_noticeIsError ? "notice-error" : "")" role="status">@_notice</p>
+    <p class="results-empty" role="status">Cargando productos…</p>
 }
 
-@if (_query.Trim().Length >= 2)
+@if (_notice is not null)
 {
-    <section class="results" aria-label="Resultados de la búsqueda" aria-busy="@_searching">
-        @if (_results.Count == 0 && !_searching)
+    <div class="notice @(_noticeIsError ? "notice-error" : "")" role="status">
+        <p>@_notice</p>
+        @if (_offerClear)
+        {
+            <button type="button" class="link-button" @onclick="ClearAfterSendAsync">Vaciar mi pedido</button>
+        }
+    </div>
+}
+
+@if (_query.Trim().Length >= 2 && _catalog is not null)
+{
+    <section class="results" aria-label="Resultados de la búsqueda">
+        @if (_results.Count == 0)
         {
             <p class="results-empty">No encontramos "@_query.Trim()" en Carrefour, Changomás ni COTO de La Plata.</p>
         }
         @foreach (var p in _results)
         {
-            var best = p.Prices.FirstOrDefault();
             var inCart = Cart.Contains(p.Ean);
             <article class="result">
                 <div class="result-text">
                     <h2 class="result-name">@p.Description</h2>
                     <p class="result-meta">@Meta(p.Brand, p.Presentation)</p>
                 </div>
-                @if (best is not null)
-                {
-                    <p class="result-price">
-                        <span class="price">@Format.Money(best.Price)</span>
-                        <span class="price-where">en @best.ChainName</span>
-                    </p>
-                }
                 <button type="button" class="btn @(inCart ? "btn-quiet" : "btn-primary")" @onclick="() => AddAsync(p)"
                         aria-label="@(inCart ? "Sumar uno más de" : "Agregar") @p.Description">
                     @(inCart ? "Uno más" : "Agregar")
@@ -60,13 +66,22 @@
 
 <section class="cart" aria-labelledby="cart-title">
     <h2 id="cart-title" class="section-title">
-        @if (Cart.Count == 0) { <text>Todavía no agregaste productos</text> }
-        else { <text>@Format.Products(Cart.Count) en la lista</text> }
+        @if (Cart.Count == 0) { <text>Todavía no hay productos</text> }
+        else { <text>@Format.Products(Cart.Count)</text> }
     </h2>
 
     @if (Cart.Count == 0)
     {
-        <p class="cart-empty">Buscá lo que comprás siempre@(_canScan ? " o escaneá el código de barras" : "") y te decimos en qué supermercado de La Plata sale menos.</p>
+        <p class="cart-empty">
+            @if (Settings.IsAdmin)
+            {
+                <text>Abrí los pedidos que te mandan o agregá productos acá. Antes de salir, comparás y la app te dice en qué supermercado conviene comprar.</text>
+            }
+            else
+            {
+                <text>Buscá lo que necesitás@(_canScan ? " o escaneá el código de barras" : "") y mandale el pedido a quien hace las compras.</text>
+            }
+        </p>
     }
     else
     {
@@ -77,8 +92,11 @@
                     <div class="cart-text">
                         <span class="cart-name">@item.Description</span>
                         <span class="cart-meta">
-                            @if (item.BestPrice is { } price) { <text>desde @Format.Money(price)</text> }
-                            else { <text>sin precio</text> }
+                            @Meta(item.Brand, item.Presentation)
+                            @if (Settings.IsAdmin && item.RequestedBy.Count > 0)
+                            {
+                                <span class="requested">Pidió @string.Join(" y ", item.RequestedBy)</span>
+                            }
                         </span>
                     </div>
                     <div class="stepper" role="group" aria-label="Cantidad de @item.Description">
@@ -97,10 +115,30 @@
 @if (Cart.Count > 0)
 {
     <div class="action-bar">
-        <a class="action-compare" href="comparar">
-            <span>Comparar @Format.Products(Cart.Count)</span>
-            <span class="action-estimate">desde @Format.Money(Cart.EstimatedTotal)</span>
-        </a>
+        @if (Settings.IsAdmin)
+        {
+            <a class="action-main" href="comparar">
+                <span>Comparar precios</span>
+                <span class="action-sub">@Format.Products(Cart.Count)</span>
+            </a>
+        }
+        else if (_askName)
+        {
+            <form class="name-form" @onsubmit="SaveNameAndSendAsync">
+                <label for="name">¿Cómo te llamás? Así sabe de quién es el pedido.</label>
+                <div class="name-row">
+                    <input id="name" class="search-input" maxlength="40" autocomplete="given-name" @bind="_name" />
+                    <button type="submit" class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(_name)">Enviar</button>
+                </div>
+            </form>
+        }
+        else
+        {
+            <button type="button" class="action-main" @onclick="SendAsync">
+                <span>Enviar pedido</span>
+                <span class="action-sub">@Format.Products(Cart.Count)</span>
+            </button>
+        }
     </div>
 }
 
@@ -110,21 +148,37 @@
 }
 
 @code {
+    private CatalogSearch? _catalog;
+    private string? _loadError;
     private string _query = "";
-    private List<ProductDto> _results = [];
-    private bool _searching;
+    private IReadOnlyList<CatalogEntry> _results = [];
     private bool _canScan;
     private bool _scanning;
     private string? _notice;
     private bool _noticeIsError;
+    private bool _offerClear;
+    private bool _askName;
+    private string _name = "";
     private CancellationTokenSource? _searchCts;
 
     protected override async Task OnInitializedAsync()
     {
         Cart.Changed += StateHasChanged;
+        Settings.Changed += StateHasChanged;
+        await Settings.LoadAsync();
         await Cart.LoadAsync();
         try { _canScan = await JS.InvokeAsync<bool>("superApp.canScan"); }
         catch (JSException) { _canScan = false; }
+
+        try
+        {
+            _catalog = await Data.GetCatalogAsync();
+        }
+        catch (DataException ex)
+        {
+            _loadError = ex.Message;
+            Show(ex.Message, error: true);
+        }
     }
 
     private async Task OnQueryChangedAsync()
@@ -132,61 +186,79 @@
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
         var ct = _searchCts.Token;
-        var text = _query.Trim();
-        if (text.Length < 2)
+        if (_catalog is null || _query.Trim().Length < 2)
         {
             _results = [];
             return;
         }
-
         try
         {
-            await Task.Delay(250, ct);
-            _searching = true;
-            _results = (await Api.SearchAsync(text, ct)).ToList();
-            _notice = null;
+            await Task.Delay(200, ct);
+            _results = _catalog.Search(_query, 20);
         }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        catch (ApiException ex)
-        {
-            Show(ex.Message, error: true);
-        }
-        finally
-        {
-            if (!ct.IsCancellationRequested) _searching = false;
-        }
+        catch (OperationCanceledException) { }
     }
 
-    private async Task AddAsync(ProductDto product)
+    private async Task AddAsync(CatalogEntry product)
     {
         await Cart.AddAsync(product);
-        Show($"Agregaste {product.Description}.");
+        Show($"Agregaste {product.Description.TrimEnd('.', ' ')}.");
     }
 
     private async Task OnScannedAsync(string code)
     {
         _scanning = false;
-        try
+        if (_catalog?.Find(code) is { } product) await AddAsync(product);
+        else Show($"El código {code} no figura en Carrefour, Changomás ni COTO de La Plata.", error: true);
+    }
+
+    private async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Settings.Name))
         {
-            var product = await Api.FindAsync(code);
-            if (product is null)
-                Show($"El código {code} no tiene precio en Carrefour, Changomás ni COTO de La Plata.", error: true);
-            else
-                await AddAsync(product);
+            _askName = true;
+            return;
         }
-        catch (ApiException ex)
+
+        var order = Cart.ToOrder(Settings.Name);
+        var url = Nav.ToAbsoluteUri(OrderLink.Encode(order)).ToString();
+        var text = $"Pedido de {order.From} para el súper ({Format.Products(order.Items.Count)}):";
+        var result = await JS.InvokeAsync<string>("superApp.share", "Pedido para el súper", text, url);
+        switch (result)
         {
-            Show(ex.Message, error: true);
+            case "shared":
+                Show("Pedido enviado.", offerClear: true);
+                break;
+            case "copied":
+                Show("Copiamos el link del pedido: pegalo en WhatsApp o donde hablen con quien hace las compras.", offerClear: true);
+                break;
+            case "cancelled":
+                break;
+            default:
+                Show("No se pudo compartir el pedido desde este navegador.", error: true);
+                break;
         }
     }
 
-    private void Show(string message, bool error = false)
+    private async Task SaveNameAndSendAsync()
+    {
+        await Settings.SetNameAsync(_name);
+        _askName = false;
+        await SendAsync();
+    }
+
+    private async Task ClearAfterSendAsync()
+    {
+        await Cart.ClearAsync();
+        _notice = null;
+        _offerClear = false;
+    }
+
+    private void Show(string message, bool error = false, bool offerClear = false)
     {
         _notice = message;
         _noticeIsError = error;
+        _offerClear = offerClear;
     }
 
     private static string Meta(string brand, string presentation) =>
@@ -195,6 +267,7 @@
     public void Dispose()
     {
         Cart.Changed -= StateHasChanged;
+        Settings.Changed -= StateHasChanged;
         _searchCts?.Cancel();
     }
 }

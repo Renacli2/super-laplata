@@ -1,10 +1,10 @@
 @page "/comparar"
-@inject ApiClient Api
+@inject DataStore Data
 @inject CartState Cart
 
 <PageTitle>Dónde comprar · Super</PageTitle>
 
-<a class="back" href="">Volver a tu lista</a>
+<a class="back" href="">Volver a la lista</a>
 
 @if (_loading)
 {
@@ -12,27 +12,27 @@
 }
 else if (_error is not null)
 {
-    <h1 class="page-title">No pudimos comparar tu lista</h1>
+    <h1 class="page-title">No pudimos comparar la lista</h1>
     <p class="notice notice-error" role="alert">@_error</p>
     <button type="button" class="btn btn-primary" @onclick="LoadAsync">Probar de nuevo</button>
 }
 else if (_result is null || Cart.Count == 0)
 {
-    <h1 class="page-title">Tu lista está vacía</h1>
-    <p class="cart-empty">Agregá productos para ver en qué supermercado conviene comprarlos.</p>
-    <a class="btn btn-primary" href="">Agregar productos</a>
+    <h1 class="page-title">La lista está vacía</h1>
+    <p class="cart-empty">Agregá productos o abrí los pedidos que te mandaron para ver en qué supermercado conviene comprar.</p>
+    <a class="btn btn-primary" href="">Ir a la lista</a>
 }
 else
 {
     var r = _result;
     var stores = r.Plan.Count;
-    var complete = r.Chains.Where(c => c.Total.HasValue).ToList();
+    var complete = r.ChainSummaries.Where(c => c.Total.HasValue).ToList();
     var priciest = complete.Count > 0 ? complete.Max(c => c.Total!.Value) : (decimal?)null;
     var payTotal = r.RecommendSingleStore ? r.BestSingleTotal!.Value : r.SplitTotal;
 
     <section class="tag" aria-labelledby="verdict">
         <h1 id="verdict" class="tag-verdict">
-            @if (r.RecommendSingleStore) { <text>Comprá todo en @r.BestSingleChainName</text> }
+            @if (r.RecommendSingleStore) { <text>Comprá todo en @r.BestSingleChain!.Value.DisplayName()</text> }
             else if (r.BestSingleChain is null) { <text>Ninguna cadena tiene todo: repartí la compra</text> }
             else { <text>Repartí la compra en @stores supermercados</text> }
         </h1>
@@ -49,11 +49,11 @@ else
     <section aria-labelledby="chains-title">
         <h2 id="chains-title" class="section-title">Toda la lista en cada cadena</h2>
         <ul class="chains">
-            @foreach (var c in r.Chains.OrderBy(c => c.Total ?? decimal.MaxValue))
+            @foreach (var c in r.ChainSummaries.OrderBy(c => c.Total ?? decimal.MaxValue))
             {
                 var width = c.Total is { } t && priciest is { } m && m > 0 ? (int)Math.Round(t / m * 100) : 0;
-                <li class="chain @Format.ChainClass(c.Chain) @(c.Total is null ? "chain-incomplete" : "")">
-                    <span class="chain-name">@c.ChainName</span>
+                <li class="chain @Format.ChainClass(c.Chain.ToString()) @(c.Total is null ? "chain-incomplete" : "")">
+                    <span class="chain-name">@c.Chain.DisplayName()</span>
                     <span class="chain-total">
                         @if (c.Total is { } total) { @Format.Money(total) }
                         else { <text>Le faltan @(c.TotalItems - c.CoveredItems) de @c.TotalItems</text> }
@@ -66,22 +66,29 @@ else
 
     <section aria-labelledby="plan-title">
         <h2 id="plan-title" class="section-title">@(stores == 1 ? "Qué llevar" : "Qué llevar en cada uno")</h2>
-        @foreach (var group in r.Plan)
+        @foreach (var (chain, lines) in r.Plan)
         {
-            <div class="plan @Format.ChainClass(group.Chain)">
+            <div class="plan @Format.ChainClass(chain.ToString())">
                 <h3 class="plan-head">
-                    <span>@group.ChainName</span>
-                    <span>@Format.Money(group.Subtotal)</span>
+                    <span>@chain.DisplayName()</span>
+                    <span>@Format.Money(lines.Sum(l => l.Total))</span>
                 </h3>
                 <ul class="plan-lines">
-                    @foreach (var line in group.Lines)
+                    @foreach (var line in lines)
                     {
-                        var key = group.Chain + line.Ean;
+                        var key = chain + line.Ean;
+                        var item = Item(line.Ean);
                         <li class="plan-line @(_picked.Contains(key) ? "is-picked" : "")">
                             <label>
                                 <input type="checkbox" checked="@_picked.Contains(key)" @onchange="() => Toggle(key)" />
                                 <span class="plan-qty">@line.Quantity ×</span>
-                                <span class="plan-name">@line.Description</span>
+                                <span class="plan-name">
+                                    @(item?.Description ?? line.Ean)
+                                    @if (item is { RequestedBy.Count: > 0 })
+                                    {
+                                        <span class="requested">para @string.Join(" y ", item.RequestedBy)</span>
+                                    }
+                                </span>
                             </label>
                             <span class="plan-price">@Format.Money(line.Total)</span>
                         </li>
@@ -98,7 +105,7 @@ else
             <ul class="missing">
                 @foreach (var ean in r.UnavailableEans)
                 {
-                    <li>@(Cart.Items.FirstOrDefault(i => i.Ean == ean)?.Description ?? ean)</li>
+                    <li>@(Item(ean)?.Description ?? ean)</li>
                 }
             </ul>
             <p class="fine-print">No entran en ningún total. Comprálos donde te quede cómodo.</p>
@@ -106,13 +113,13 @@ else
     }
 
     <p class="fine-print">
-        Precio de lista más bajo entre las sucursales de La Plata, según SEPA. Las promociones todavía no se cuentan.
-        Si repartir ahorra @Format.Percent(r.Threshold) o menos, te sugerimos un solo supermercado.
+        Precio de lista más bajo entre las sucursales de La Plata, según SEPA;
+        las promociones todavía no se cuentan. Si repartir ahorra @Format.Percent(r.Threshold) o menos, te sugerimos un solo supermercado.
     </p>
 }
 
 @code {
-    private CompareResponse? _result;
+    private ComparisonResult? _result;
     private string? _error;
     private bool _loading = true;
     private readonly HashSet<string> _picked = [];
@@ -129,11 +136,16 @@ else
         _error = null;
         try
         {
-            _result = Cart.Count == 0
-                ? null
-                : await Api.CompareAsync(new CompareRequest(Cart.Items.Select(i => new CompareItem(i.Ean, i.Quantity)).ToList()));
+            if (Cart.Count == 0)
+            {
+                _result = null;
+                return;
+            }
+            var prices = await Data.GetPricesAsync();
+            var cart = Cart.Items.Select(i => new CartLine(i.Ean, i.Quantity)).ToList();
+            _result = new ComparisonEngine().Compare(cart, DataStore.QuotesFor(prices, cart.Select(c => c.Ean)));
         }
-        catch (ApiException ex)
+        catch (DataException ex)
         {
             _error = ex.Message;
         }
@@ -143,22 +155,24 @@ else
         }
     }
 
+    private CartItem? Item(string ean) => Cart.Items.FirstOrDefault(i => Ean.Normalize(i.Ean) == ean);
+
     private void Toggle(string key)
     {
         if (!_picked.Remove(key)) _picked.Add(key);
     }
 
-    private static string Note(CompareResponse r)
+    private static string Note(ComparisonResult r)
     {
         if (r.RecommendSingleStore)
         {
             var extra = r.BestSingleTotal!.Value - r.SplitTotal;
             return extra <= 0
-                ? "Tiene el precio más bajo en todos los productos de tu lista."
+                ? "Tiene el precio más bajo en todos los productos de la lista."
                 : $"Repartiendo ahorrarías {Format.Money(extra)} ({Format.Percent(r.Gap!.Value)}), no vale la vuelta extra.";
         }
         if (r.BestSingleTotal is { } single)
-            return $"Ahorrás {Format.Money(single - r.SplitTotal)} ({Format.Percent(r.Gap!.Value)}) frente a comprar todo en {r.BestSingleChainName}.";
+            return $"Ahorrás {Format.Money(single - r.SplitTotal)} ({Format.Percent(r.Gap!.Value)}) frente a comprar todo en {r.BestSingleChain!.Value.DisplayName()}.";
         return "Cada producto en la cadena donde sale menos.";
     }
 }

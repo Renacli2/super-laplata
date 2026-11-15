@@ -127,4 +127,34 @@ public sealed class IngestionTests : PostgresTestBase
         await using var db = CreateContext();
         Assert.Empty(await new EfPriceQuoteSource(db).GetQuotesAsync(["7790360981042"]));
     }
+
+    [SkippableFact]
+    public async Task Prune_KeepsOnlyTheLastDays_AndTheCatalog()
+    {
+        var day0 = new DateOnly(2026, 11, 10);
+        for (var i = 0; i < 4; i++)                       // 10, 11, 12 y 13 de noviembre
+            await IngestAsync(Chain.Coto, day0.AddDays(i), Productos(3500m + i, 3600m));
+
+        await using var db = CreateContext();
+        var deleted = await new SepaIngestionService(db).PruneAsync(keepDays: 2);
+
+        Assert.Equal(2 * (3 + 2), deleted);               // 2 días × (3 por sucursal + 2 por cadena)
+        Assert.Equal([new DateOnly(2026, 11, 12), new DateOnly(2026, 11, 13)],
+            await db.ChainPrices.Select(p => p.PriceDate).Distinct().OrderBy(d => d).ToListAsync());
+        Assert.Equal(2, await db.Products.CountAsync());
+        Assert.Equal(4, await db.ImportRuns.CountAsync());
+
+        // El comparador sigue viendo el último día.
+        var quotes = await new EfPriceQuoteSource(db).GetQuotesAsync(["7790360981042"]);
+        Assert.Equal(3503m, Assert.Single(quotes).UnitPrice);
+
+        Assert.Equal(0, await new SepaIngestionService(db).PruneAsync(keepDays: 2));
+    }
+
+    [SkippableFact]
+    public async Task Prune_WithNoImports_DoesNothing()
+    {
+        await using var db = CreateContext();
+        Assert.Equal(0, await new SepaIngestionService(db).PruneAsync(keepDays: 14));
+    }
 }

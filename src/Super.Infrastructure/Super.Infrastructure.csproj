@@ -11,5 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Super.Domain\Super.Domain.csproj" />
     <ProjectReference Include="..\Super.Application\Super.Application.csproj" />
+    <ProjectReference Include="..\Super.Contracts\Super.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
-using Super.Contracts;
+using Super.Application.Catalog;
+using Super.Application.Orders;
 
 namespace Super.Web.Services;
 
@@ -10,19 +11,19 @@ public sealed class CartItem
     public string Description { get; set; } = "";
     public string Brand { get; set; } = "";
     public string Presentation { get; set; } = "";
-    public decimal? BestPrice { get; set; }
-    public string? BestChainName { get; set; }
     public int Quantity { get; set; } = 1;
+
+    /// <summary>Quiénes pidieron este producto (solo en la lista del administrador).</summary>
+    public List<string> RequestedBy { get; set; } = [];
 }
 
 /// <summary>
-/// La lista de compras, guardada en el navegador (localStorage) para que sobreviva al cerrar la app.
-/// Si el navegador no deja guardar (modo privado), la lista funciona igual mientras la app esté abierta.
+/// La lista, guardada en el navegador (localStorage) para que sobreviva al cerrar la app.
+/// Si el navegador no deja guardar (modo privado), funciona igual mientras la app esté abierta.
 /// </summary>
 public sealed class CartState(IJSRuntime js)
 {
-    private const string StorageKey = "super.lista.v1";
-    private const int MaxQuantity = 999;
+    private const string StorageKey = "super.lista.v2";
     private List<CartItem> _items = [];
     private bool _loaded;
 
@@ -30,10 +31,6 @@ public sealed class CartState(IJSRuntime js)
 
     public IReadOnlyList<CartItem> Items => _items;
     public int Count => _items.Count;
-    public int Units => _items.Sum(i => i.Quantity);
-
-    /// <summary>Suma de los mejores precios por producto (lo mínimo que se puede gastar).</summary>
-    public decimal EstimatedTotal => _items.Sum(i => (i.BestPrice ?? 0m) * i.Quantity);
 
     public async Task LoadAsync()
     {
@@ -54,46 +51,51 @@ public sealed class CartState(IJSRuntime js)
 
     public bool Contains(string ean) => _items.Any(i => i.Ean == ean);
 
-    public Task AddAsync(ProductDto product)
+    public Task AddAsync(CatalogEntry product) => AddCoreAsync(product.Ean, product, 1, from: null, save: true);
+
+    /// <summary>Suma un pedido recibido: acumula cantidades y anota quién lo pidió.</summary>
+    public async Task AddOrderAsync(Order order, CatalogSearch catalog)
     {
-        var item = _items.FirstOrDefault(i => i.Ean == product.Ean);
-        var best = product.Prices.FirstOrDefault();
-        if (item is null)
-        {
-            _items.Insert(0, new CartItem
-            {
-                Ean = product.Ean,
-                Description = product.Description,
-                Brand = product.Brand,
-                Presentation = product.Presentation,
-                BestPrice = best?.Price,
-                BestChainName = best?.ChainName,
-            });
-        }
-        else
-        {
-            item.Quantity = Math.Min(item.Quantity + 1, MaxQuantity);
-            item.BestPrice = best?.Price ?? item.BestPrice;
-            item.BestChainName = best?.ChainName ?? item.BestChainName;
-        }
-        return SaveAsync();
+        foreach (var item in order.Items)
+            await AddCoreAsync(item.Ean, catalog.Find(item.Ean), item.Quantity, order.From, save: false);
+        await SaveAsync();
     }
+
+    public Order ToOrder(string from) => new(from, _items.Select(i => new OrderItem(i.Ean, i.Quantity)).ToList());
 
     public Task SetQuantityAsync(string ean, int quantity)
     {
         var item = _items.FirstOrDefault(i => i.Ean == ean);
         if (item is null) return Task.CompletedTask;
         if (quantity <= 0) _items.Remove(item);
-        else item.Quantity = Math.Min(quantity, MaxQuantity);
+        else item.Quantity = Math.Min(quantity, OrderLink.MaxQuantity);
         return SaveAsync();
     }
-
-    public Task RemoveAsync(string ean) => SetQuantityAsync(ean, 0);
 
     public Task ClearAsync()
     {
         _items.Clear();
         return SaveAsync();
+    }
+
+    private Task AddCoreAsync(string ean, CatalogEntry? product, int quantity, string? from, bool save)
+    {
+        var item = _items.FirstOrDefault(i => i.Ean == ean);
+        if (item is null)
+        {
+            item = new CartItem
+            {
+                Ean = ean,
+                Description = product?.Description ?? $"Código {ean.TrimStart('0')}",
+                Brand = product?.Brand ?? "",
+                Presentation = product?.Presentation ?? "",
+                Quantity = 0,
+            };
+            _items.Insert(0, item);
+        }
+        item.Quantity = Math.Min(item.Quantity + quantity, OrderLink.MaxQuantity);
+        if (!string.IsNullOrWhiteSpace(from) && !item.RequestedBy.Contains(from)) item.RequestedBy.Add(from);
+        return save ? SaveAsync() : Task.CompletedTask;
     }
 
     private async Task SaveAsync()
@@ -103,9 +105,6 @@ public sealed class CartState(IJSRuntime js)
         {
             await js.InvokeVoidAsync("superApp.storageSet", StorageKey, JsonSerializer.Serialize(_items));
         }
-        catch (JSException)
-        {
-            // Sin almacenamiento: la lista sigue en memoria.
-        }
+        catch (JSException) { }
     }
 }

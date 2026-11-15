@@ -483,3 +483,5 @@ $RECYCLE.BIN/
 .local/
 **/appsettings.Local.json
 publish/
+publish.zip
+src/Super.Web/wwwroot/data/

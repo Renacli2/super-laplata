@@ -12,10 +12,15 @@ using Super.Infrastructure.Sepa;
 
 // Uso:
 //   Super.Ingest migrate                         aplica las migraciones pendientes
-//   Super.Ingest import <zip|carpeta>            importa Carrefour, Changomás y COTO del dump
-//   Super.Ingest status                          últimas ingestas por cadena
+//   Super.Ingest import <zip|carpeta> [--keep-days N]
+//                                                importa Carrefour, Changomás y COTO del dump y borra los precios
+//                                                de días viejos (por defecto quedan 14 días; 0 = no borrar nada)
+//   Super.Ingest prune <días>                    deja solo los precios de los últimos <días> días
+//   Super.Ingest status                          últimas ingestas por cadena y tamaño de la base
 //   Super.Ingest compare <ean[xcant]> ...        compara un carrito con los precios vigentes
 // Conexión: variable SUPER_DB o ConnectionStrings:Super en appsettings.Local.json (carpeta actual o superiores).
+
+const int DefaultKeepDays = 14;
 
 var culture = CultureInfo.GetCultureInfo("es-AR");
 CultureInfo.CurrentCulture = culture;
@@ -23,7 +28,7 @@ Console.OutputEncoding = Encoding.UTF8;   // la consola de Windows usa la págin
 
 if (args.Length == 0)
 {
-    Console.WriteLine("Uso: Super.Ingest migrate | import <zip|carpeta> | status | compare <ean[xcant]> ...");
+    Console.WriteLine("Uso: Super.Ingest migrate | import <zip|carpeta> [--keep-days N] | prune <días> | status | compare <ean[xcant]> ...");
     return 1;
 }
 
@@ -46,7 +51,14 @@ try
             return 0;
 
         case "import" when args.Length == 2:
-            return await ImportAsync(db, args[1]);
+            return await ImportAsync(db, args[1], DefaultKeepDays);
+
+        case "import" when args.Length == 4 && args[2] == "--keep-days" && int.TryParse(args[3], out var keep) && keep >= 0:
+            return await ImportAsync(db, args[1], keep);
+
+        case "prune" when args.Length == 2 && int.TryParse(args[1], out var days) && days >= 1:
+            await PruneAsync(new SepaIngestionService(db), days);
+            return 0;
 
         case "status":
             await PrintStatusAsync(db);
@@ -76,7 +88,15 @@ catch (Exception ex) when (ex is NpgsqlException || ex.InnerException is NpgsqlE
     return 2;
 }
 
-static async Task<int> ImportAsync(SuperDbContext db, string path)
+static async Task PruneAsync(SepaIngestionService service, int keepDays)
+{
+    var deleted = await service.PruneAsync(keepDays);
+    Console.WriteLine(deleted == 0
+        ? $"No había precios de más de {keepDays} días para borrar."
+        : $"Borrados {deleted:N0} precios de más de {keepDays} días.");
+}
+
+static async Task<int> ImportAsync(SuperDbContext db, string path, int keepDays)
 {
     await db.Database.MigrateAsync();
     var files = SepaDump.Open(path);
@@ -101,6 +121,8 @@ static async Task<int> ImportAsync(SuperDbContext db, string path)
                 $"[{sw.Elapsed.TotalSeconds:N1} s]");
         }
     }
+
+    if (keepDays > 0) await PruneAsync(service, keepDays);
     return 0;
 }
 
@@ -111,6 +133,11 @@ static async Task PrintStatusAsync(SuperDbContext db)
     foreach (var r in runs)
         Console.WriteLine($"{r.PriceDate:yyyy-MM-dd} {r.Chain.DisplayName(),-10} {r.Accepted,8:N0} precios {r.DistinctProducts,7:N0} EAN {r.Branches,3} suc.  {r.ImportedAt.ToLocalTime():g}");
     Console.WriteLine($"Productos en catálogo: {await db.Products.CountAsync():N0}");
+    var days = await db.ChainPrices.Select(p => p.PriceDate).Distinct().CountAsync();
+    var bytes = await db.Database
+        .SqlQueryRaw<long>("select pg_database_size(current_database()) as \"Value\"")
+        .SingleAsync();
+    Console.WriteLine($"Días con precios: {days}   Tamaño de la base: {bytes / 1024d / 1024d:N0} MB");
 }
 
 static async Task<int> CompareAsync(SuperDbContext db, string[] items)

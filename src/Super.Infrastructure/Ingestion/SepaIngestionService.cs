@@ -150,5 +150,29 @@ public sealed class SepaIngestionService(SuperDbContext db, SepaImporter? import
         });
     }
 
+    /// <summary>
+    /// Borra los precios (por sucursal y por cadena) de los días anteriores a los últimos <paramref name="keepDays"/>
+    /// días importados. El catálogo de productos, las sucursales y el registro de ingestas se conservan.
+    /// Cada día ocupa unos 35 MB; con 14 días la base entra en 1 GB (plan gratis de Neon).
+    /// </summary>
+    /// <returns>Cantidad de filas de precios borradas.</returns>
+    public async Task<int> PruneAsync(int keepDays, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(keepDays, 1);
+        var latest = await db.ImportRuns.MaxAsync(r => (DateOnly?)r.PriceDate, ct);
+        if (latest is null) return 0;
+
+        var cutoff = latest.Value.AddDays(-(keepDays - 1));
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            var deleted = await db.BranchPrices.Where(p => p.PriceDate < cutoff).ExecuteDeleteAsync(ct)
+                        + await db.ChainPrices.Where(p => p.PriceDate < cutoff).ExecuteDeleteAsync(ct);
+            await tx.CommitAsync(ct);
+            return deleted;
+        });
+    }
+
     private static string Clip(string text, int max) => text.Length <= max ? text : text[..max];
 }

@@ -1,34 +1,39 @@
 ﻿@inherits LayoutComponentBase
-@inject ApiClient Api
+@inject DataStore Data
+@inject Settings Settings
 
 <div class="shell">
     <header class="masthead">
-        <a class="wordmark" href="" aria-label="Super, ir a tu lista">
+        <a class="wordmark" href="" aria-label="Super, ir a la lista">
             <span class="wordmark-name">Super</span>
             <span class="wordmark-place">La Plata</span>
         </a>
-        @if (_status is { Chains.Count: > 0 } s)
-        {
-            <p class="freshness">Precios del @Format.Date(s.Chains.Min(c => c.PriceDate))</p>
-        }
-        else if (_statusFailed)
-        {
-            <p class="freshness freshness-off">Sin conexión</p>
-        }
+        <a class="masthead-link" href="ajustes">@(Settings.IsAdmin ? "Admin" : (Settings.Name.Length > 0 ? Settings.Name : "Ajustes"))</a>
     </header>
 
     <main class="page">
         @Body
     </main>
+
+    @if (_version is { } v)
+    {
+        <footer class="footer">Productos y precios del @Format.Date(v.PriceDate), según SEPA.</footer>
+    }
+    else if (_loaded)
+    {
+        <footer class="footer footer-off">Sin conexión: se usan los últimos datos guardados.</footer>
+    }
 </div>
 
 @code {
-    private StatusDto? _status;
-    private bool _statusFailed;
+    private DataVersionDto? _version;
+    private bool _loaded;
 
     protected override async Task OnInitializedAsync()
     {
-        _status = await Api.StatusAsync();
-        _statusFailed = _status is null;
+        Settings.Changed += StateHasChanged;
+        await Settings.LoadAsync();
+        _version = await Data.GetVersionAsync();
+        _loaded = true;
     }
 }

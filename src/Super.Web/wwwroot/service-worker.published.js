@@ -11,9 +11,9 @@ const cacheName = `${cacheNamePrefix}${self.assetsManifest.version}`;
 const offlineAssetsInclude = [ /\.dll$/, /\.pdb$/, /\.wasm/, /\.html/, /\.js$/, /\.json$/, /\.css$/, /\.woff$/, /\.png$/, /\.jpe?g$/, /\.gif$/, /\.ico$/, /\.blat$/, /\.dat$/, /\.webmanifest$/ ];
 const offlineAssetsExclude = [ /^service-worker\.js$/ ];
 
-// Replace with your base path if you are hosting on a subfolder. Ensure there is a trailing '/'.
-const base = "/";
-const baseUrl = new URL(base, self.origin);
+// La base es la carpeta del propio service worker: sirve igual en "/" (local) y en "/<repo>/" (GitHub Pages)
+// sin tocar el archivo después de compilar (su hash está en service-worker-assets.js).
+const baseUrl = new URL('./', self.location);
 const manifestUrlList = self.assetsManifest.assets.map(asset => new URL(asset.url, baseUrl).href);
 
 async function onInstall(event) {
@@ -33,11 +33,34 @@ async function onActivate(event) {
     // Delete unused caches
     const cacheKeys = await caches.keys();
     await Promise.all(cacheKeys
-        .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName)
+        .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName && key !== dataCacheName)
         .map(key => caches.delete(key)));
 }
 
+// Datos diarios (data/*.json): primero la red; si no hay señal, la última copia guardada.
+// Se guardan sin el "?v=" para que la copia sirva aunque cambie la fecha.
+const dataCacheName = 'super-data';
+
+async function fetchData(request) {
+    const url = new URL(request.url);
+    const key = url.origin + url.pathname;
+    const cache = await caches.open(dataCacheName);
+    try {
+        const response = await fetch(request, { cache: 'no-cache' });
+        if (response.ok) await cache.put(key, response.clone());
+        return response;
+    } catch (e) {
+        const cached = await cache.match(key);
+        if (cached) return cached;
+        throw e;
+    }
+}
+
 async function onFetch(event) {
+    if (event.request.method === 'GET' && new URL(event.request.url).pathname.startsWith(new URL('data/', baseUrl).pathname)) {
+        return fetchData(event.request);
+    }
+
     let cachedResponse = null;
     if (event.request.method === 'GET') {
         // For all navigation requests, try to serve index.html from cache,

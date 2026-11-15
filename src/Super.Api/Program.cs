@@ -18,7 +18,8 @@ var connectionString = builder.Configuration.GetConnectionString("Super")
     ?? throw new InvalidOperationException(
         "Falta la conexión a PostgreSQL: definí ConnectionStrings__Super o creá appsettings.Local.json.");
 
-builder.Services.AddDbContext<SuperDbContext>(o => o.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
+builder.Services.AddDbContext<SuperDbContext>(o =>
+    SuperDbContext.Configure((DbContextOptionsBuilder<SuperDbContext>)o, connectionString));
 builder.Services.AddScoped<IPriceQuoteSource, EfPriceQuoteSource>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddProblemDetails();

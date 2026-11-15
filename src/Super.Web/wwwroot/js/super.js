@@ -19,6 +19,27 @@ window.superApp = (() => {
       try { localStorage.setItem(key, value); } catch { /* sin almacenamiento */ }
     },
 
+    /**
+     * Comparte el pedido con el menú del sistema (WhatsApp, Telegram, etc.).
+     * Si el navegador no lo permite, copia el texto con el link. Devuelve "shared", "copied", "cancelled" o "failed".
+     */
+    async share(title, text, url) {
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text, url });
+          return 'shared';
+        } catch (e) {
+          if (e && e.name === 'AbortError') return 'cancelled';
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        return 'copied';
+      } catch {
+        return 'failed';
+      }
+    },
+
     /** El escáner usa BarcodeDetector (Chrome y Edge en Android). En el resto se carga el código a mano. */
     canScan() {
       return 'BarcodeDetector' in window && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);

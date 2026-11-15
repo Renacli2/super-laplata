@@ -1,0 +1,90 @@
+@page "/pedido"
+@inject DataStore Data
+@inject CartState Cart
+@inject Settings Settings
+@inject NavigationManager Nav
+
+<PageTitle>Pedido recibido · Super</PageTitle>
+
+@if (_order is null)
+{
+    <h1 class="page-title">Este link no tiene un pedido</h1>
+    <p class="cart-empty">Pedile a quien te lo mandó que lo vuelva a enviar desde la app.</p>
+    <a class="btn btn-primary" href="">Ir a la lista</a>
+}
+else if (_catalog is null && _error is null)
+{
+    <h1 class="page-title">Abriendo el pedido…</h1>
+}
+else
+{
+    <h1 class="page-title">@(_order.From.Length > 0 ? $"Pedido de {_order.From}" : "Pedido recibido")</h1>
+
+    @if (_error is not null)
+    {
+        <p class="notice notice-error" role="alert">@_error</p>
+    }
+
+    <ul class="cart-list">
+        @foreach (var item in _order.Items)
+        {
+            var product = _catalog?.Find(item.Ean);
+            <li class="cart-item">
+                <div class="cart-text">
+                    <span class="cart-name">@(product?.Description ?? $"Código {item.Ean.TrimStart('0')}")</span>
+                    <span class="cart-meta">@(product is null ? "No figura en los datos de hoy" : product.Presentation)</span>
+                </div>
+                <span class="order-qty">@item.Quantity</span>
+            </li>
+        }
+    </ul>
+
+    @if (_added)
+    {
+        <p class="notice" role="status">Listo: sumamos el pedido a tu lista.</p>
+        <a class="btn btn-primary" href="">Ver la lista</a>
+    }
+    else
+    {
+        <div class="order-actions">
+            <button type="button" class="btn btn-primary" @onclick="AddAsync" disabled="@(_catalog is null)">Sumar a mi lista</button>
+            @if (!Settings.IsAdmin)
+            {
+                <p class="fine-print">Si sos quien hace las compras, activá el modo administrador en <a href="ajustes">Ajustes</a> para comparar precios.</p>
+            }
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "de")] public string? From { get; set; }
+    [SupplyParameterFromQuery(Name = "i")] public string? Items { get; set; }
+
+    private Order? _order;
+    private CatalogSearch? _catalog;
+    private string? _error;
+    private bool _added;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _order = OrderLink.Decode(From, Items);
+        if (_order is null) return;
+        await Settings.LoadAsync();
+        await Cart.LoadAsync();
+        try
+        {
+            _catalog = await Data.GetCatalogAsync();
+        }
+        catch (DataException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        if (_order is null || _catalog is null) return;
+        await Cart.AddOrderAsync(_order, _catalog);
+        _added = true;
+    }
+}

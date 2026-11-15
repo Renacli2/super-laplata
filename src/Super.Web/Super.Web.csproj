@@ -18,6 +18,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Super.Contracts\Super.Contracts.csproj" />
+    <ProjectReference Include="..\Super.Application\Super.Application.csproj" />
+  </ItemGroup>
+
+  <!-- Datos de prueba generados con Super.Export (en producción los publica el workflow). No se versionan. -->
+  <ItemGroup>
+    <Content Update="wwwroot\data\**" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
 </Project>

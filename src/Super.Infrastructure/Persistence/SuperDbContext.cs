@@ -13,10 +13,19 @@ public sealed class SuperDbContext(DbContextOptions<SuperDbContext> options) : D
 
     /// <summary>Configuración común (Npgsql + nombres en snake_case).</summary>
     public static DbContextOptions<SuperDbContext> CreateOptions(string connectionString) =>
-        new DbContextOptionsBuilder<SuperDbContext>()
-            .UseNpgsql(connectionString)
-            .UseSnakeCaseNamingConvention()
-            .Options;
+        Configure(new DbContextOptionsBuilder<SuperDbContext>(), connectionString).Options;
+
+    /// <summary>
+    /// Npgsql con reintentos ante fallas transitorias: Neon duerme la base cuando no se usa y la primera
+    /// conexión puede fallar mientras despierta. Las transacciones propias deben ir dentro de
+    /// <c>Database.CreateExecutionStrategy()</c> (la ingesta ya lo hace).
+    /// </summary>
+    public static DbContextOptionsBuilder<SuperDbContext> Configure(DbContextOptionsBuilder<SuperDbContext> builder,
+        string connectionString) =>
+        builder
+            .UseNpgsql(connectionString, npgsql => npgsql.EnableRetryOnFailure(
+                maxRetryCount: 4, maxRetryDelay: TimeSpan.FromSeconds(5), errorCodesToAdd: null))
+            .UseSnakeCaseNamingConvention();
 
     protected override void OnModelCreating(ModelBuilder model)
     {

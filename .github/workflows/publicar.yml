@@ -1,0 +1,65 @@
+# Publica la app y los precios del día en GitHub Pages.
+# Corre todos los días a las 17:30 de Argentina (el portal sube el dump del día cerca de las 13:20),
+# cada vez que se sube código a main, y a mano desde la pestaña Actions ("Run workflow").
+# Si la descarga falla, la corrida queda en rojo y la app sigue con los datos del día anterior.
+name: Publicar app y precios
+
+on:
+  schedule:
+    - cron: '30 20 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Tests (los de PostgreSQL se omiten acá)
+        run: dotnet test tests/Super.Tests -c Release
+
+      - name: Descargar el dump de SEPA y generar los datos
+        run: dotnet run -c Release --project tools/Super.Export -- --download site-data
+
+      - name: Compilar la app
+        run: dotnet publish src/Super.Web -c Release -o out
+
+      - name: Armar el sitio
+        run: |
+          cd out/wwwroot
+          mkdir -p data
+          cp ../../site-data/*.json data/
+          # GitHub Pages devuelve 404.html para rutas como /comparar o /pedido: es la misma app.
+          cp index.html 404.html
+          # Sin esto, Jekyll ignora la carpeta _framework.
+          touch .nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

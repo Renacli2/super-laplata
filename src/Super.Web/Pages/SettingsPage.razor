@@ -1,0 +1,56 @@
+@page "/ajustes"
+@inject Settings Settings
+@inject DataStore Data
+
+<PageTitle>Ajustes · Super</PageTitle>
+
+<a class="back" href="">Volver a la lista</a>
+<h1 class="page-title">Ajustes</h1>
+
+<form class="settings" @onsubmit="SaveNameAsync">
+    <label for="name" class="section-title">Tu nombre</label>
+    <p class="fine-print">Aparece en los pedidos que mandás, para saber de quién es cada cosa.</p>
+    <div class="name-row">
+        <input id="name" class="search-input" maxlength="40" autocomplete="given-name" @bind="_name" />
+        <button type="submit" class="btn btn-quiet">Guardar</button>
+    </div>
+    @if (_saved) { <p class="fine-print" role="status">Guardado.</p> }
+</form>
+
+<section class="settings" aria-labelledby="role-title">
+    <h2 id="role-title" class="section-title">Quién hace las compras</h2>
+    <label class="toggle">
+        <input type="checkbox" checked="@Settings.IsAdmin" @onchange="ToggleAdminAsync" />
+        <span>Soy quien hace las compras: recibo los pedidos, veo precios y comparo supermercados.</span>
+    </label>
+    <p class="fine-print">Los demás solo arman su pedido y lo mandan por WhatsApp. Este ajuste vale solo para este celular.</p>
+</section>
+
+@if (_version is { } v)
+{
+    <section class="settings" aria-labelledby="data-title">
+        <h2 id="data-title" class="section-title">Datos</h2>
+        <p class="fine-print">@v.Products.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) productos de Carrefour, Changomás y COTO de La Plata, con precios del @Format.Date(v.PriceDate). Se actualizan solos todos los días.</p>
+    </section>
+}
+
+@code {
+    private string _name = "";
+    private bool _saved;
+    private DataVersionDto? _version;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Settings.LoadAsync();
+        _name = Settings.Name;
+        _version = await Data.GetVersionAsync();
+    }
+
+    private async Task SaveNameAsync()
+    {
+        await Settings.SetNameAsync(_name);
+        _saved = true;
+    }
+
+    private Task ToggleAdminAsync(ChangeEventArgs e) => Settings.SetAdminAsync(e.Value is true);
+}

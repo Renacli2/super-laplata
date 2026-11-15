@@ -4,8 +4,8 @@
     {
       "name": "super",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "src/Super.Api", "--launch-profile", "http"],
-      "port": 5234
+      "runtimeArgs": ["run", "--project", "src/Super.Web", "--launch-profile", "http"],
+      "port": 5039
     }
   ]
 }

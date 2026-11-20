@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Descarga el dump de SEPA, genera los datos de la app y los publica en GitHub Pages.
 
@@ -21,7 +21,9 @@ param(
     [string] $SiteUrl = 'https://renacli2.github.io/super-laplata'
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Continue' a propósito: en Windows PowerShell 5.1, si git o dotnet escriben en stderr (por ejemplo "remote: ..."),
+# con 'Stop' eso corta el script aunque el comando haya funcionado. Los errores se detectan con $LASTEXITCODE.
+$ErrorActionPreference = 'Continue'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 $logDir = Join-Path $env:LOCALAPPDATA 'Super'
 $log = Join-Path $logDir 'actualizar-precios.log'
@@ -47,7 +49,7 @@ function Export-Day([DateTime] $day, [string] $output) {
     & dotnet run -c Release --project (Join-Path $root 'tools\Super.Export') -- --download $output $name 2>&1 |
         ForEach-Object { Write-Log "   $_" }
     if ($LASTEXITCODE -ne 0) { throw "Super.Export falló para el $name (código $LASTEXITCODE)" }
-    [DateTime]::ParseExact((Get-Content (Join-Path $output 'version.json') -Raw | ConvertFrom-Json).date, 'yyyy-MM-dd', $null)
+    [DateTime]::ParseExact((Get-Content (Join-Path $output 'version.json') -Raw -ErrorAction Stop | ConvertFrom-Json).date, 'yyyy-MM-dd', $null)
 }
 
 try {
@@ -58,7 +60,7 @@ try {
 
     $published = $null
     try {
-        $v = Invoke-RestMethod "$SiteUrl/data/version.json?t=$([DateTime]::UtcNow.Ticks)" -TimeoutSec 30
+        $v = Invoke-RestMethod "$SiteUrl/data/version.json?t=$([DateTime]::UtcNow.Ticks)" -TimeoutSec 30 -ErrorAction Stop
         $published = [DateTime]::ParseExact($v.date, 'yyyy-MM-dd', $null)
         Write-Log "Publicado: precios del $($published.ToString('yyyy-MM-dd'))"
     } catch {

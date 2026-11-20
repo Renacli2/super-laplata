@@ -44,13 +44,25 @@ El service worker guarda la última copia de los datos: sin señal, la app busca
 
 ## Publicación: GitHub Pages (gratis)
 
-El workflow [`.github/workflows/publicar.yml`](.github/workflows/publicar.yml) corre todos los días a las 17:30
-(Argentina), con cada push a `main` y a mano desde *Actions → Run workflow*: corre los tests, descarga el dump del día,
-genera los datos, compila la app y la publica en `https://<usuario>.github.io/<repo>/`.
+La app está en https://renacli2.github.io/super-laplata/.
 
-Requisitos: el repositorio tiene que ser **público** (GitHub Pages gratis) y en *Settings → Pages* elegir
-*Source: GitHub Actions*. Si la descarga falla un día, la corrida queda en rojo y la app sigue con los datos anteriores.
-GitHub pausa los workflows programados si el repositorio pasa 60 días sin cambios: se reactivan desde *Actions*.
+**El dump lo descarga la PC**, porque el portal de SEPA bloquea a los servidores de GitHub (responde 403 desde el
+17/11/2026; desde una conexión argentina funciona):
+
+1. La tarea programada **"Super - actualizar precios"** corre [`scripts/actualizar-precios.ps1`](scripts/actualizar-precios.ps1)
+   a las 15:00 y a las 20:00 (el dump del día sale cerca de las 13:20). Si la PC estaba apagada, corre al prenderla.
+   Descarga el dump de hoy (o el de ayer, si el de hoy todavía no salió) y genera los datos.
+2. Si son más nuevos que los publicados, los sube a la rama **`datos`** (un solo commit que se reemplaza cada vez)
+   y lanza el workflow [`.github/workflows/publicar.yml`](.github/workflows/publicar.yml), que corre los tests,
+   compila la app y la publica con esos datos. El workflow también corre con cada push a `main`.
+3. Si la PC no corre la tarea, la app sigue con los últimos precios publicados (la fecha se ve al pie).
+
+Instalar o actualizar la tarea: `scripts\instalar-tarea.ps1` (necesita `dotnet`, `git` y GitHub CLI con sesión iniciada).
+Registro: `%LOCALAPPDATA%\Super\actualizar-precios.log`; salida completa de la última corrida: `ultima-corrida.txt` en la
+misma carpeta. A mano: `scripts\actualizar-precios.ps1` (con `-Force` publica aunque no haya precios nuevos).
+
+Requisitos de GitHub: el repositorio tiene que ser **público** (GitHub Pages gratis) y en *Settings → Pages*,
+*Source: GitHub Actions*.
 
 **Instalar:** Android (Chrome o Edge): menú ⋮ → *Instalar aplicación*. iPhone (Safari): Compartir → *Agregar a inicio*.
 Windows (Edge o Chrome): ícono de instalar en la barra de direcciones.

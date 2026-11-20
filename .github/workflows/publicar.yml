@@ -1,12 +1,13 @@
-# Publica la app y los precios del día en GitHub Pages.
-# Corre todos los días a las 17:30 de Argentina (el portal sube el dump del día cerca de las 13:20),
-# cada vez que se sube código a main, y a mano desde la pestaña Actions ("Run workflow").
-# Si la descarga falla, la corrida queda en rojo y la app sigue con los datos del día anterior.
+# Publica la app y los precios en GitHub Pages.
+#
+# El portal de SEPA bloquea las descargas desde los servidores de GitHub (403 desde el 17/11/2026), así que el
+# dump lo descarga la PC: scripts/actualizar-precios.ps1 genera los datos, los sube a la rama "datos" (un solo
+# commit, se reemplaza cada día) y lanza este workflow. Este workflow solo compila la app y la publica con esos datos.
+#
+# Corre cuando se sube código a main, cuando lo lanza el script de la PC y a mano desde Actions ("Run workflow").
 name: Publicar app y precios
 
 on:
-  schedule:
-    - cron: '30 20 * * *'
   push:
     branches: [main]
   workflow_dispatch:
@@ -23,9 +24,23 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Traer los datos de la rama "datos"
+        run: |
+          if ! git fetch --depth=1 origin datos:refs/remotes/origin/datos; then
+            echo "::error::Falta la rama 'datos'. Corré scripts/actualizar-precios.ps1 en la PC."
+            exit 1
+          fi
+          mkdir -p site-data
+          for f in version.json catalog.json prices.json; do
+            git show "origin/datos:$f" > "site-data/$f"
+          done
+          echo "Datos del: $(grep -o '"date":"[^"]*"' site-data/version.json)"
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -33,9 +48,6 @@ jobs:
 
       - name: Tests (los de PostgreSQL se omiten acá)
         run: dotnet test tests/Super.Tests -c Release
-
-      - name: Descargar el dump de SEPA y generar los datos
-        run: dotnet run -c Release --project tools/Super.Export -- --download site-data
 
       - name: Compilar la app
         run: dotnet publish src/Super.Web -c Release -o out

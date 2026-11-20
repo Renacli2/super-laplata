@@ -15,6 +15,12 @@ public sealed class CartItem
 
     /// <summary>Quiénes pidieron este producto (solo en la lista del administrador).</summary>
     public List<string> RequestedBy { get; set; } = [];
+
+    /// <summary>
+    /// Ya está en el changuito (se tachó en la comparación). Se guarda en el producto, no en el plan,
+    /// así sigue tachado aunque se recalcule y el producto pase a otro supermercado.
+    /// </summary>
+    public bool InCart { get; set; }
 }
 
 /// <summary>
@@ -31,6 +37,7 @@ public sealed class CartState(IJSRuntime js)
 
     public IReadOnlyList<CartItem> Items => _items;
     public int Count => _items.Count;
+    public int InCartCount => _items.Count(i => i.InCart);
 
     public async Task LoadAsync()
     {
@@ -67,8 +74,30 @@ public sealed class CartState(IJSRuntime js)
     {
         var item = _items.FirstOrDefault(i => i.Ean == ean);
         if (item is null) return Task.CompletedTask;
-        if (quantity <= 0) _items.Remove(item);
-        else item.Quantity = Math.Min(quantity, OrderLink.MaxQuantity);
+        if (quantity <= 0)
+        {
+            _items.Remove(item);
+        }
+        else
+        {
+            // Si piden más de algo que ya estaba en el changuito, hay que volver a buscarlo.
+            if (quantity > item.Quantity) item.InCart = false;
+            item.Quantity = Math.Min(quantity, OrderLink.MaxQuantity);
+        }
+        return SaveAsync();
+    }
+
+    public Task SetInCartAsync(string ean, bool inCart)
+    {
+        var item = _items.FirstOrDefault(i => i.Ean == ean);
+        if (item is null || item.InCart == inCart) return Task.CompletedTask;
+        item.InCart = inCart;
+        return SaveAsync();
+    }
+
+    public Task ClearInCartAsync()
+    {
+        foreach (var item in _items) item.InCart = false;
         return SaveAsync();
     }
 
@@ -94,6 +123,7 @@ public sealed class CartState(IJSRuntime js)
             _items.Insert(0, item);
         }
         item.Quantity = Math.Min(item.Quantity + quantity, OrderLink.MaxQuantity);
+        item.InCart = false;   // hay que llevar más: deja de estar tachado
         if (!string.IsNullOrWhiteSpace(from) && !item.RequestedBy.Contains(from)) item.RequestedBy.Add(from);
         return save ? SaveAsync() : Task.CompletedTask;
     }

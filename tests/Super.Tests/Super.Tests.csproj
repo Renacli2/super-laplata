@@ -18,5 +18,6 @@
     <ProjectReference Include="..\..\src\Super.Application\Super.Application.csproj" />
     <ProjectReference Include="..\..\src\Super.Infrastructure\Super.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Super.Api\Super.Api.csproj" />
+    <ProjectReference Include="..\..\src\Super.Web\Super.Web.csproj" />
   </ItemGroup>
 </Project>

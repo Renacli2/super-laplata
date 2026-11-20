@@ -1,4 +1,5 @@
 @page "/comparar"
+@implements IDisposable
 @inject DataStore Data
 @inject CartState Cart
 
@@ -66,6 +67,17 @@ else
 
     <section aria-labelledby="plan-title">
         <h2 id="plan-title" class="section-title">@(stores == 1 ? "Qué llevar" : "Qué llevar en cada uno")</h2>
+        @if (Cart.InCartCount > 0)
+        {
+            <p class="progress" role="status">
+                @Cart.InCartCount de @Format.Products(Cart.Count) en el changuito.
+                <button type="button" class="link-button" @onclick="Cart.ClearInCartAsync">Destildar todo</button>
+            </p>
+        }
+        else
+        {
+            <p class="fine-print">Tildá cada producto cuando lo pongas en el changuito. Si después agregás algo a la lista y volvés a comparar, lo tildado se mantiene.</p>
+        }
         @foreach (var (chain, lines) in r.Plan)
         {
             <div class="plan @Format.ChainClass(chain.ToString())">
@@ -76,11 +88,11 @@ else
                 <ul class="plan-lines">
                     @foreach (var line in lines)
                     {
-                        var key = chain + line.Ean;
                         var item = Item(line.Ean);
-                        <li class="plan-line @(_picked.Contains(key) ? "is-picked" : "")">
+                        var inCart = item?.InCart == true;
+                        <li class="plan-line @(inCart ? "is-picked" : "")">
                             <label>
-                                <input type="checkbox" checked="@_picked.Contains(key)" @onchange="() => Toggle(key)" />
+                                <input type="checkbox" checked="@inCart" @onchange="e => Cart.SetInCartAsync(line.Ean, e.Value is true)" />
                                 <span class="plan-qty">@line.Quantity ×</span>
                                 <span class="plan-name">
                                     @(item?.Description ?? line.Ean)
@@ -105,7 +117,15 @@ else
             <ul class="missing">
                 @foreach (var ean in r.UnavailableEans)
                 {
-                    <li>@(Item(ean)?.Description ?? ean)</li>
+                    var item = Item(ean);
+                    var inCart = item?.InCart == true;
+                    <li class="plan-line @(inCart ? "is-picked" : "")">
+                        <label>
+                            <input type="checkbox" checked="@inCart" @onchange="e => Cart.SetInCartAsync(ean, e.Value is true)" />
+                            <span class="plan-qty">@(item?.Quantity ?? 1) ×</span>
+                            <span class="plan-name">@(item?.Description ?? ean)</span>
+                        </label>
+                    </li>
                 }
             </ul>
             <p class="fine-print">No entran en ningún total. Comprálos donde te quede cómodo.</p>
@@ -122,10 +142,10 @@ else
     private ComparisonResult? _result;
     private string? _error;
     private bool _loading = true;
-    private readonly HashSet<string> _picked = [];
 
     protected override async Task OnInitializedAsync()
     {
+        Cart.Changed += StateHasChanged;
         await Cart.LoadAsync();
         await LoadAsync();
     }
@@ -157,10 +177,7 @@ else
 
     private CartItem? Item(string ean) => Cart.Items.FirstOrDefault(i => Ean.Normalize(i.Ean) == ean);
 
-    private void Toggle(string key)
-    {
-        if (!_picked.Remove(key)) _picked.Add(key);
-    }
+    public void Dispose() => Cart.Changed -= StateHasChanged;
 
     private static string Note(ComparisonResult r)
     {

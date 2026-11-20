@@ -97,6 +97,10 @@
                             {
                                 <span class="requested">Pidió @string.Join(" y ", item.RequestedBy)</span>
                             }
+                            @if (Settings.IsAdmin && item.InCart)
+                            {
+                                <span class="in-cart">Ya está en el changuito</span>
+                            }
                         </span>
                     </div>
                     <div class="stepper" role="group" aria-label="Cantidad de @item.Description">

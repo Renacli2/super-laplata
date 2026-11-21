@@ -701,3 +701,56 @@ button, input { font: inherit; color: inherit; }
 
 .plan-missing { --chain: var(--line); }
 .link-button.inline { margin: 0; padding: 0; }
+
+/* ---------- Avisos de datos (precios viejos, sin señal) ---------- */
+
+.data-alert {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-left: 4px solid var(--tag);
+    background: color-mix(in srgb, var(--tag) 18%, var(--surface));
+    font-weight: 500;
+}
+
+.tag-warn { font-weight: 700; }
+
+/* ---------- En el súper: avance por supermercado y barra fija ---------- */
+
+.plan-progress {
+    margin-top: var(--space-2);
+    font-size: var(--step--1);
+    font-weight: 500;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.plan-progress.is-done { color: var(--ink); }
+
+/* Toda la fila es tocable con el pulgar (mínimo 48 px de alto). */
+.plan-line { padding: 0; }
+.plan-line label { flex: 1; min-height: 3rem; padding: var(--space-3) 0; align-items: center; }
+.plan-line input { width: 1.6rem; height: 1.6rem; margin: 0; }
+.plan-price { align-self: center; }
+
+.cart-bar {
+    max-width: 40rem;
+    margin: 0 auto;
+    min-height: var(--bar-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-control);
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-2);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.cart-bar-main, .cart-bar-side { display: grid; }
+.cart-bar-side { text-align: right; opacity: 0.85; font-size: var(--step-1); }
+.cart-bar-label { font-family: var(--font-text); font-weight: 500; font-size: var(--step--1); opacity: 0.85; }

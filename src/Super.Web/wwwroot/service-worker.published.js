@@ -41,24 +41,46 @@ async function onActivate(event) {
 // Se guardan sin el "?v=" para que la copia sirva aunque cambie la fecha.
 const dataCacheName = 'super-data';
 
-async function fetchData(request) {
+// Con señal débil (adentro del súper) la red puede tardar mucho: si hay copia guardada, se espera
+// a lo sumo esto y se usa la copia. La descarga sigue de fondo y actualiza la copia para la próxima vez.
+const networkWaitMs = 4000;
+
+// La app lee esta cabecera para avisar "Sin señal: usando los precios del …".
+function markSaved(response) {
+    const headers = new Headers(response.headers);
+    headers.set('x-super-saved', '1');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function fetchData(event) {
+    const request = event.request;
     const url = new URL(request.url);
     const key = url.origin + url.pathname;
     const cache = await caches.open(dataCacheName);
-    try {
-        const response = await fetch(request, { cache: 'no-cache' });
+    const cached = await cache.match(key);
+
+    const network = fetch(request, { cache: 'no-cache' }).then(async response => {
         if (response.ok) await cache.put(key, response.clone());
         return response;
-    } catch (e) {
-        const cached = await cache.match(key);
-        if (cached) return cached;
-        throw e;
+    });
+
+    if (!cached) return network;
+
+    // Que el service worker siga vivo hasta terminar de guardar la copia nueva.
+    event.waitUntil(network.catch(() => null));
+    const timeout = new Promise(resolve => setTimeout(() => resolve(null), networkWaitMs));
+    try {
+        const response = await Promise.race([network, timeout]);
+        if (response && response.ok) return response;
+    } catch {
+        // sin red: se usa la copia
     }
+    return markSaved(cached);
 }
 
 async function onFetch(event) {
     if (event.request.method === 'GET' && new URL(event.request.url).pathname.startsWith(new URL('data/', baseUrl).pathname)) {
-        return fetchData(event.request);
+        return fetchData(event);
     }
 
     let cachedResponse = null;

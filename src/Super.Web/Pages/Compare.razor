@@ -34,6 +34,10 @@ else
         <p class="tag-price" aria-label="Total @Format.Money(rec.FullTotal)">
             <span class="tag-currency">$</span><span class="tag-amount">@Format.Amount(decimal.Truncate(rec.FullTotal))</span><span class="tag-cents">@Format.Cents(rec.FullTotal)</span>
         </p>
+        @if (Data.IsStale && Data.Version is { } version)
+        {
+            <p class="tag-note tag-warn">Precios de @Freshness.Ago(Data.AgeInDays!.Value) (@Format.Date(version.PriceDate)): pueden haber cambiado.</p>
+        }
         @foreach (var line in Weighting(r))
         {
             <p class="tag-note">@line</p>
@@ -82,7 +86,7 @@ else
         }
         @if (Cart.InCartCount > 0)
         {
-            <p class="progress" role="status">
+            <p class="progress">
                 @Cart.InCartCount de @Format.Products(Cart.Count) en el changuito.
                 <button type="button" class="link-button" @onclick="Cart.ClearInCartAsync">Destildar todo</button>
             </p>
@@ -92,13 +96,23 @@ else
             <p class="fine-print">Tildá cada producto cuando lo pongas en el changuito. Lo tildado se mantiene aunque cambies de opción o agregues productos.</p>
         }
 
+        @{ var picked = PickedEans(); }
         @foreach (var (chain, lines, heading) in PlanGroups(selected))
         {
+            var group = ShoppingProgress.For(lines, picked);
             <div class="plan @Format.ChainClass(chain.ToString())">
                 <h3 class="plan-head">
                     <span>@heading</span>
-                    <span>@Format.Money(lines.Sum(l => l.Total))</span>
+                    <span>@Format.Money(group.Total)</span>
                 </h3>
+                @if (group.IsDone)
+                {
+                    <p class="plan-progress is-done">Listo: está todo en el changuito.</p>
+                }
+                else if (group.PickedCount > 0)
+                {
+                    <p class="plan-progress">Llevás @Format.Money(group.PickedTotal) · faltan @Format.Products(group.RemainingCount) por @Format.Money(group.RemainingTotal)</p>
+                }
                 <ul class="plan-lines">
                     @foreach (var line in lines)
                     {
@@ -124,9 +138,26 @@ else
     }
 
     <p class="fine-print">
-        Precio de lista más bajo entre las sucursales de La Plata, según SEPA; las promociones todavía no se cuentan.
+        Precio de lista más bajo entre las sucursales de La Plata, según SEPA; las promociones todavía no se cuentan,
+        así que lo que suma el changuito puede diferir un poco del ticket.
         Se recomienda ir a menos supermercados salvo que el ahorro supere el @Format.Percent(r.Threshold).
     </p>
+
+    var progress = ShoppingProgress.For(selected, PickedEans());
+    <div class="action-bar">
+        <div class="cart-bar" role="status" aria-live="polite">
+            @if (progress.IsDone)
+            {
+                <span class="cart-bar-main">Listo: todo en el changuito</span>
+                <span class="cart-bar-side"><span class="cart-bar-label">Total</span>@Format.Money(progress.PickedTotal)</span>
+            }
+            else
+            {
+                <span class="cart-bar-main"><span class="cart-bar-label">En el changuito</span>@Format.Money(progress.PickedTotal)</span>
+                <span class="cart-bar-side"><span class="cart-bar-label">Falta · @Format.Products(progress.RemainingCount)</span>@Format.Money(progress.RemainingTotal)</span>
+            }
+        </div>
+    </div>
 }
 
 @code {
@@ -192,6 +223,10 @@ else
     };
 
     private CartItem? Item(string ean) => Cart.Items.FirstOrDefault(i => Ean.Normalize(i.Ean) == ean);
+
+    /// <summary>EAN (normalizados, como en el plan) de lo que ya está en el changuito.</summary>
+    private HashSet<string> PickedEans() =>
+        Cart.Items.Where(i => i.InCart).Select(i => Ean.Normalize(i.Ean)).OfType<string>().ToHashSet(StringComparer.Ordinal);
 
     /// <summary>"Carrefour", "Carrefour y COTO", "Carrefour, Changomás y COTO".</summary>
     private static string Join(IEnumerable<Chain> chains)

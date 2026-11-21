@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
 @inject DataStore Data
 @inject Settings Settings
 
@@ -11,29 +12,55 @@
         <a class="masthead-link" href="ajustes">@(Settings.IsAdmin ? "Admin" : (Settings.Name.Length > 0 ? Settings.Name : "Ajustes"))</a>
     </header>
 
+    @if (Settings.IsAdmin && Data.Version is { } date)
+    {
+        @if (Data.UsingSavedData)
+        {
+            <p class="data-alert" role="status">Sin señal: usando los precios del @Format.Date(date.PriceDate) guardados en el celular.</p>
+        }
+        @if (Data.IsStale)
+        {
+            <p class="data-alert" role="status">
+                Los precios son del @Format.Date(date.PriceDate) (@Freshness.Ago(Data.AgeInDays!.Value)).
+                Revisá que la PC esté prendida para que se actualicen.
+            </p>
+        }
+    }
+
     <main class="page">
         @Body
     </main>
 
-    @if (_version is { } v)
+    @if (Data.Version is { } v)
     {
         <footer class="footer">Productos y precios del @Format.Date(v.PriceDate), según SEPA.</footer>
     }
     else if (_loaded)
     {
-        <footer class="footer footer-off">Sin conexión: se usan los últimos datos guardados.</footer>
+        <footer class="footer footer-off">Sin conexión y sin datos guardados todavía.</footer>
     }
 </div>
 
 @code {
-    private DataVersionDto? _version;
     private bool _loaded;
 
     protected override async Task OnInitializedAsync()
     {
         Settings.Changed += StateHasChanged;
+        Data.Changed += OnDataChanged;
         await Settings.LoadAsync();
-        _version = await Data.GetVersionAsync();
+        await Data.GetVersionAsync();
         _loaded = true;
+
+        // El administrador compara en el súper: los precios se bajan ya, para tenerlos aunque allá no haya señal.
+        if (Settings.IsAdmin) _ = Data.PrefetchPricesAsync();
+    }
+
+    private void OnDataChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Settings.Changed -= StateHasChanged;
+        Data.Changed -= OnDataChanged;
     }
 }

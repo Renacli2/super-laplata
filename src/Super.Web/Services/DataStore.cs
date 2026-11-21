@@ -17,22 +17,37 @@ public sealed class DataStore(HttpClient http)
 {
     private DataVersionDto? _version;
     private CatalogSearch? _catalog;
-    private PricesFileDto? _prices;
     private Task<CatalogSearch>? _catalogLoad;
+    private Task<PricesFileDto>? _pricesLoad;
+
+    /// <summary>Cabecera que pone el service worker cuando responde con la copia guardada (sin señal).</summary>
+    private const string SavedCopyHeader = "x-super-saved";
 
     public DataVersionDto? Version => _version;
+
+    /// <summary>La última descarga de datos vino de la copia guardada en el celular, no de internet.</summary>
+    public bool UsingSavedData { get; private set; }
+
+    /// <summary>Cambió <see cref="Version"/> o <see cref="UsingSavedData"/>.</summary>
+    public event Action? Changed;
+
+    /// <summary>Días desde la fecha de los precios publicados; null si todavía no se sabe.</summary>
+    public int? AgeInDays => _version is null ? null : Freshness.AgeInDays(_version.PriceDate, Freshness.Today());
+
+    public bool IsStale => _version is not null && Freshness.IsStale(_version.PriceDate, Freshness.Today());
 
     public async Task<DataVersionDto?> GetVersionAsync()
     {
         if (_version is not null) return _version;
         try
         {
-            _version = await http.GetFromJsonAsync<DataVersionDto>($"data/version.json?t={DateTime.UtcNow.Ticks}");
+            _version = await GetJsonAsync<DataVersionDto>($"data/version.json?t={DateTime.UtcNow.Ticks}");
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
         {
             _version = null;
         }
+        Changed?.Invoke();
         return _version;
     }
 
@@ -44,7 +59,7 @@ public sealed class DataStore(HttpClient http)
         try
         {
             var version = await GetVersionAsync();
-            var file = await http.GetFromJsonAsync<CatalogFileDto>($"data/catalog.json?v={version?.PriceDate:yyyyMMdd}")
+            var file = await GetJsonAsync<CatalogFileDto>($"data/catalog.json?v={version?.PriceDate:yyyyMMdd}")
                        ?? throw new DataException("El catálogo de productos está vacío.");
             return _catalog = new CatalogSearch(file.Products.Select(p =>
                 new CatalogEntry(p.Ean, p.Description, p.Brand, p.Presentation)));
@@ -57,19 +72,45 @@ public sealed class DataStore(HttpClient http)
     }
 
     /// <summary>Precios por cadena (solo para comparar, ~300 KB comprimido).</summary>
-    public async Task<PricesFileDto> GetPricesAsync()
+    public Task<PricesFileDto> GetPricesAsync() => _pricesLoad ??= LoadPricesAsync();
+
+    /// <summary>
+    /// Baja los precios del día apenas se abre la app (solo el administrador), así quedan guardados en el celular
+    /// y la comparación anda aunque en el súper no haya señal. Si falla, no molesta: se reintenta al comparar.
+    /// </summary>
+    public async Task PrefetchPricesAsync()
     {
-        if (_prices is not null) return _prices;
+        try { await GetPricesAsync(); }
+        catch (DataException) { }
+    }
+
+    private async Task<PricesFileDto> LoadPricesAsync()
+    {
         try
         {
             var version = await GetVersionAsync();
-            return _prices = await http.GetFromJsonAsync<PricesFileDto>($"data/prices.json?v={version?.PriceDate:yyyyMMdd}")
-                             ?? throw new DataException("El archivo de precios está vacío.");
+            return await GetJsonAsync<PricesFileDto>($"data/prices.json?v={version?.PriceDate:yyyyMMdd}")
+                   ?? throw new DataException("El archivo de precios está vacío.");
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
         {
-            throw new DataException("No se pudieron cargar los precios. Revisá la conexión y probá de nuevo.");
+            _pricesLoad = null;   // permitir reintentar
+            throw new DataException("No se pudieron cargar los precios y no hay una copia guardada en el celular. Probá de nuevo cuando tengas señal.");
         }
+    }
+
+    /// <summary>Descarga un JSON de data/ y anota si vino de la copia guardada por el service worker.</summary>
+    private async Task<T?> GetJsonAsync<T>(string url)
+    {
+        using var response = await http.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        var saved = response.Headers.Contains(SavedCopyHeader) || response.Content.Headers.Contains(SavedCopyHeader);
+        if (saved != UsingSavedData)
+        {
+            UsingSavedData = saved;
+            Changed?.Invoke();
+        }
+        return await response.Content.ReadFromJsonAsync<T>();
     }
 
     /// <summary>Precios de los EAN pedidos, listos para el motor de comparación.</summary>

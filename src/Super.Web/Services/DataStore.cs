@@ -17,6 +17,8 @@ public sealed class DataStore(HttpClient http)
 {
     private DataVersionDto? _version;
     private CatalogSearch? _catalog;
+    private IReadOnlyList<CatalogEntry> _entries = [];
+    private Task<EquivalentFinder>? _equivalentsLoad;
     private Task<CatalogSearch>? _catalogLoad;
     private Task<PricesFileDto>? _pricesLoad;
 
@@ -61,8 +63,8 @@ public sealed class DataStore(HttpClient http)
             var version = await GetVersionAsync();
             var file = await GetJsonAsync<CatalogFileDto>($"data/catalog.json?v={version?.PriceDate:yyyyMMdd}")
                        ?? throw new DataException("El catálogo de productos está vacío.");
-            return _catalog = new CatalogSearch(file.Products.Select(p =>
-                new CatalogEntry(p.Ean, p.Description, p.Brand, p.Presentation)));
+            _entries = file.Products.Select(p => new CatalogEntry(p.Ean, p.Description, p.Brand, p.Presentation)).ToList();
+            return _catalog = new CatalogSearch(_entries);
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
         {
@@ -97,6 +99,48 @@ public sealed class DataStore(HttpClient http)
             _pricesLoad = null;   // permitir reintentar
             throw new DataException("No se pudieron cargar los precios y no hay una copia guardada en el celular. Probá de nuevo cuando tengas señal.");
         }
+    }
+
+    /// <summary>
+    /// Buscador de productos equivalentes más baratos (solo el administrador: usa los precios).
+    /// Se arma una vez por sesión con el catálogo y el precio más bajo de cada producto.
+    /// </summary>
+    public Task<EquivalentFinder> GetEquivalentsAsync() => _equivalentsLoad ??= LoadEquivalentsAsync();
+
+    private async Task<EquivalentFinder> LoadEquivalentsAsync()
+    {
+        try
+        {
+            await GetCatalogAsync();
+            var file = await GetPricesAsync();
+            return new EquivalentFinder(_entries, BestPrices(file));
+        }
+        catch
+        {
+            _equivalentsLoad = null;   // permitir reintentar
+            throw;
+        }
+    }
+
+    /// <summary>Precio más bajo de cada EAN entre las cadenas, y en cuáles está a ese precio.</summary>
+    public static IReadOnlyDictionary<string, BestPrice> BestPrices(PricesFileDto file)
+    {
+        var chains = file.Chains
+            .Select(c => Enum.TryParse<Chain>(c.Id, out var chain) ? chain : (Chain?)null)
+            .ToList();
+        var result = new Dictionary<string, BestPrice>(file.Prices.Count, StringComparer.Ordinal);
+        foreach (var row in file.Prices)
+        {
+            decimal? min = null;
+            for (var i = 0; i < row.Prices.Count && i < chains.Count; i++)
+                if (row.Prices[i] is { } p && chains[i] is not null && (min is null || p < min)) min = p;
+            if (min is not { } best) continue;
+            var at = new List<Chain>();
+            for (var i = 0; i < row.Prices.Count && i < chains.Count; i++)
+                if (row.Prices[i] == best && chains[i] is { } chain) at.Add(chain);
+            result[row.Ean] = new BestPrice(best, at);
+        }
+        return result;
     }
 
     /// <summary>Descarga un JSON de data/ y anota si vino de la copia guardada por el service worker.</summary>

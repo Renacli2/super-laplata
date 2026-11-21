@@ -44,6 +44,14 @@ else
         }
     </section>
 
+    @if (_equivalentCount > 0)
+    {
+        <p class="notice eq-summary">
+            Cambiando @Format.Products(_equivalentCount) por equivalentes más baratos ahorrarías hasta @Format.Money(decimal.Round(_equivalentSaving)).
+            <a class="link-button inline" href="">Revisarlos en la lista</a>
+        </p>
+    }
+
     <section aria-labelledby="options-title">
         <h2 id="options-title" class="section-title">Opciones de compra</h2>
         <p class="fine-print">Todas por la lista entera. Las de fondo de color no tienen todo: lo que falta se suma a su menor precio en otro supermercado.</p>
@@ -165,6 +173,8 @@ else
     private PurchaseOption? _selected;
     private string? _error;
     private bool _loading = true;
+    private int _equivalentCount;
+    private decimal _equivalentSaving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -188,6 +198,12 @@ else
             var prices = await Data.GetPricesAsync();
             var cart = Cart.Items.Select(i => new CartLine(i.Ean, i.Quantity)).ToList();
             _result = new PurchaseOptionsEngine().Compute(cart, DataStore.QuotesFor(prices, cart.Select(c => c.Ean)));
+
+            // Cuánto se ahorraría cambiando productos por equivalentes (se revisan y cambian en la lista).
+            var finder = await Data.GetEquivalentsAsync();
+            var savings = cart.Select(c => Ean.Normalize(c.Ean) is { } ean ? finder.SavingFor(ean, c.Quantity) : 0m).Where(s => s > 0).ToList();
+            _equivalentCount = savings.Count;
+            _equivalentSaving = savings.Sum();
         }
         catch (DataException ex)
         {

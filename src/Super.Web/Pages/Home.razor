@@ -109,6 +109,40 @@
                         <output aria-live="polite">@item.Quantity</output>
                         <button type="button" @onclick="() => Cart.SetQuantityAsync(item.Ean, item.Quantity + 1)" aria-label="Uno más">+</button>
                     </div>
+                    @if (Settings.IsAdmin && _equivalents?.Find(item.Ean) is { Count: > 0 } eqs)
+                    {
+                        var open = _openEquivalents == item.Ean;
+                        var size = _equivalents.SizeOf(item.Ean)!;
+                        <div class="eq">
+                            <button type="button" class="eq-toggle" aria-expanded="@(open ? "true" : "false")"
+                                    @onclick="() => _openEquivalents = open ? null : item.Ean">
+                                Hay más baratos: desde @Format.Money(eqs[0].Price) (@Format.Percent(eqs[0].Saving) menos por @size.PerUnitLabel)
+                            </button>
+                            @if (open)
+                            {
+                                @if (item.RequestedBy.Count > 0)
+                                {
+                                    <p class="eq-note">Lo pidió @string.Join(" y ", item.RequestedBy): fijate si quiere esa marca justa.</p>
+                                }
+                                <ul class="eq-list">
+                                    @foreach (var eq in eqs)
+                                    {
+                                        <li class="eq-item">
+                                            <div class="eq-text">
+                                                <span class="cart-name">@eq.Product.Description</span>
+                                                <span class="cart-meta">
+                                                    @Format.Money(eq.Price) · @Format.Money(decimal.Round(eq.PerUnitPrice)) el @(eq.Size.Unit == SizeUnit.Grams ? "kilo" : "litro")
+                                                    · @Format.Percent(eq.Saving) menos · en @string.Join(" y ", eq.Chains.Select(c => c.DisplayName()))
+                                                </span>
+                                            </div>
+                                            <button type="button" class="btn btn-quiet" @onclick="() => ReplaceAsync(item, eq)"
+                                                    aria-label="Cambiar @item.Description por @eq.Product.Description">Cambiar</button>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    }
                 </li>
             }
         </ul>
@@ -164,6 +198,8 @@
     private bool _askName;
     private string _name = "";
     private CancellationTokenSource? _searchCts;
+    private EquivalentFinder? _equivalents;
+    private string? _openEquivalents;
 
     protected override async Task OnInitializedAsync()
     {
@@ -183,6 +219,21 @@
             _loadError = ex.Message;
             Show(ex.Message, error: true);
         }
+
+        // Equivalentes más baratos: solo el administrador, que es quien ve precios. Si no hay precios, no se muestran.
+        if (Settings.IsAdmin && _catalog is not null)
+        {
+            try { _equivalents = await Data.GetEquivalentsAsync(); }
+            catch (DataException) { _equivalents = null; }
+        }
+    }
+
+    private async Task ReplaceAsync(CartItem item, Equivalent eq)
+    {
+        var before = item.Description.TrimEnd('.', ' ');
+        await Cart.ReplaceAsync(item.Ean, eq.Product);
+        _openEquivalents = null;
+        Show($"Cambiaste {before} por {eq.Product.Description.TrimEnd('.', ' ')}.");
     }
 
     private async Task OnQueryChangedAsync()

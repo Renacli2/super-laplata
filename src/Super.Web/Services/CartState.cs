@@ -87,6 +87,39 @@ public sealed class CartState(IJSRuntime js)
         return SaveAsync();
     }
 
+    /// <summary>
+    /// Cambia un producto por otro equivalente: misma cantidad y mismos "pidió", en el mismo lugar de la lista.
+    /// Si el nuevo ya estaba en la lista, se suman las cantidades.
+    /// </summary>
+    public Task ReplaceAsync(string ean, CatalogEntry replacement)
+    {
+        var item = _items.FirstOrDefault(i => i.Ean == ean);
+        if (item is null || ean == replacement.Ean) return Task.CompletedTask;
+
+        var existing = _items.FirstOrDefault(i => i.Ean == replacement.Ean);
+        if (existing is not null)
+        {
+            existing.Quantity = Math.Min(existing.Quantity + item.Quantity, OrderLink.MaxQuantity);
+            existing.InCart = false;
+            foreach (var who in item.RequestedBy.Where(w => !existing.RequestedBy.Contains(w)))
+                existing.RequestedBy.Add(who);
+            _items.Remove(item);
+        }
+        else
+        {
+            _items[_items.IndexOf(item)] = new CartItem
+            {
+                Ean = replacement.Ean,
+                Description = replacement.Description,
+                Brand = replacement.Brand,
+                Presentation = replacement.Presentation,
+                Quantity = item.Quantity,
+                RequestedBy = item.RequestedBy,
+            };
+        }
+        return SaveAsync();
+    }
+
     public Task SetInCartAsync(string ean, bool inCart)
     {
         var item = _items.FirstOrDefault(i => i.Ean == ean);

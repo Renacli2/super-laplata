@@ -123,4 +123,36 @@ public class CartStateTests
         Assert.Equal(2, item.Quantity);
         Assert.False(item.InCart);
     }
+
+    [Fact]
+    public async Task Replace_KeepsQuantityRequesterAndPosition()
+    {
+        var cart = await NewCartAsync(new FakeStorage());
+        await cart.AddOrderAsync(new Order("Ana", [new OrderItem(Aceite.Ean, 3)]), Catalog);
+        await cart.AddAsync(Kinder);   // queda primero
+        var otroAceite = new CatalogEntry("7790000000011", "ACEITE GIRASOL", "OTRA", "900 ml");
+
+        await cart.ReplaceAsync(Aceite.Ean, otroAceite);
+
+        var item = cart.Items[1];
+        Assert.Equal(otroAceite.Ean, item.Ean);
+        Assert.Equal(3, item.Quantity);
+        Assert.Equal(["Ana"], item.RequestedBy);
+        Assert.DoesNotContain(cart.Items, i => i.Ean == Aceite.Ean);
+    }
+
+    [Fact]
+    public async Task Replace_WithAProductAlreadyInTheList_AddsTheQuantities()
+    {
+        var cart = await NewCartAsync(new FakeStorage());
+        await cart.AddAsync(Aceite);
+        await cart.SetQuantityAsync(Aceite.Ean, 2);
+        await cart.AddAsync(Kinder);
+
+        await cart.ReplaceAsync(Aceite.Ean, Kinder);
+
+        var item = Assert.Single(cart.Items);
+        Assert.Equal(Kinder.Ean, item.Ean);
+        Assert.Equal(3, item.Quantity);
+    }
 }

@@ -112,9 +112,34 @@ public class PurchaseOptionsEngineTests
     }
 
     [Fact]
-    public void IncompleteOptions_GoLast_WithWhatIsMissing()
+    public void IncompleteOptions_AreSortedByTheWholeList_WithTheirComplement()
     {
-        // B solo lo vende COTO.
+        // C solo lo vende Changomás. COTO solo no lo tiene: se completa en Changomás.
+        var r = _engine.Compute([L(A), L(B), L(C)],
+        [
+            Q(Chain.Carrefour, A, 10), Q(Chain.Carrefour, B, 10),
+            Q(Chain.Changomas, A, 20), Q(Chain.Changomas, B, 20), Q(Chain.Changomas, C, 5),
+            Q(Chain.Coto, A, 9), Q(Chain.Coto, B, 30),
+        ]);
+
+        var coto = r.Options.Single(o => Names(o) == "Coto");
+        Assert.False(coto.IsComplete);
+        Assert.Equal([C], coto.MissingEans);
+        Assert.Equal(39m, coto.Total);                                    // A 9 + B 30 en COTO
+        Assert.Equal(C, coto.Complement[Chain.Changomas].Single().Ean);
+        Assert.Equal(44m, coto.FullTotal);                                // + C 5 en Changomás
+        Assert.Equal(5m / 44m, coto.MissingShare);
+
+        // Un solo orden por lista entera: triple 24, Carrefour+Changomás 25, Changomás+COTO 34, COTO 44, Changomás 45.
+        Assert.Equal([24m, 25m, 34m, 44m, 45m], r.Options.Select(o => o.FullTotal));
+        Assert.Equal(3, r.Options[0].StoreCount);
+        Assert.Equal(20m / 24m, r.GapToCheapest(coto));
+    }
+
+    [Fact]
+    public void IncompleteOptionEqualToAPair_IsShownOnceAsThePair()
+    {
+        // Carrefour solo + B completado en COTO es exactamente la compra Carrefour + COTO.
         var r = _engine.Compute([L(A), L(B)],
         [
             Q(Chain.Carrefour, A, 10),
@@ -122,14 +147,80 @@ public class PurchaseOptionsEngineTests
             Q(Chain.Coto, A, 15), Q(Chain.Coto, B, 30),
         ]);
 
-        var complete = r.Options.TakeWhile(o => o.IsComplete).ToList();
-        var incomplete = r.Options.SkipWhile(o => o.IsComplete).ToList();
-        Assert.All(incomplete, o => Assert.False(o.IsComplete));
-        Assert.Equal(r.Options.Count, complete.Count + incomplete.Count);
+        Assert.DoesNotContain(r.Options, o => Names(o) == "Carrefour");
+        var pair = Assert.Single(r.Options, o => Names(o) == "Carrefour+Coto");
+        Assert.True(pair.IsComplete);
+        Assert.Same(pair, r.Cheapest);
+        Assert.Equal("Coto", Names(r.BestSingleStore!));
+    }
 
-        Assert.Equal("Carrefour+Coto", Names(r.Cheapest!));               // A en Carrefour, B en COTO = 40
-        Assert.Contains(incomplete, o => Names(o) == "Carrefour" && o.MissingEans.SequenceEqual([B]));
-        Assert.Equal("Coto", Names(r.BestSingleStore!));                   // el único que tiene todo
+    [Fact]
+    public void SmallSecondStore_IsAShortStop_AndWeighsHalf()
+    {
+        // X: COTO 100, Changomás 104. Y (chico) solo en Changomás a 4: COTO + parada corta en Changomás = 104.
+        // Changomás solo = 108 (3,8 % más): no entra en el 3 %, se recomienda COTO + parada corta.
+        var r = _engine.Compute([L(A), L(B)],
+        [
+            Q(Chain.Coto, A, 100),
+            Q(Chain.Changomas, A, 104), Q(Chain.Changomas, B, 4),
+        ]);
+
+        var rec = r.Recommended!;
+        Assert.True(rec.IsComplete);                                      // es el par, con Changomás chiquito
+        Assert.Equal([Chain.Coto], rec.MainStores);
+        Assert.Equal([Chain.Changomas], rec.ShortStops);
+        Assert.Equal(1.5m, rec.Effort);
+        Assert.Equal(104m, rec.FullTotal);
+    }
+
+    [Fact]
+    public void SingleStoreWithinThreshold_BeatsAShortStop()
+    {
+        var r = _engine.Compute([L(A), L(B)],
+        [
+            Q(Chain.Coto, A, 100),
+            Q(Chain.Changomas, A, 101), Q(Chain.Changomas, B, 4),            // Changomás solo = 105 (< 3 % sobre 104)
+        ]);
+
+        Assert.Equal(1m, r.Recommended!.Effort);
+        Assert.Equal("Changomas", Names(r.Recommended));
+    }
+
+    [Fact]
+    public void MainStorePlusShortStopForWhatIsMissing_CanBeRecommended()
+    {
+        // COTO tiene A y B; C (3) solo en Changomás. COTO + C en Changomás = 203, falta 1,5 %: parada corta.
+        // El reparto óptimo COTO + Changomás = 201 (B más barato en Changomás) obliga a dos compras grandes.
+        var r = _engine.Compute([L(A), L(B), L(C)],
+        [
+            Q(Chain.Coto, A, 100), Q(Chain.Coto, B, 100),
+            Q(Chain.Changomas, A, 120), Q(Chain.Changomas, B, 98), Q(Chain.Changomas, C, 3),
+        ]);
+
+        Assert.Equal(201m, r.Cheapest!.FullTotal);
+        Assert.Equal(2m, r.Cheapest.Effort);
+        var rec = r.Recommended!;
+        Assert.False(rec.IsComplete);
+        Assert.Equal("Coto", Names(rec));
+        Assert.Equal(203m, rec.FullTotal);
+        Assert.Equal([Chain.Changomas], rec.ShortStops);
+        Assert.True(r.IsEligible(rec));
+    }
+
+    [Fact]
+    public void OptionMissingMoreThanTheShortStopShare_IsNeverRecommended()
+    {
+        // COTO solo cuesta casi lo mismo, pero lo que falta (C) es el 20 % de la compra.
+        var r = _engine.Compute([L(A), L(C)],
+        [
+            Q(Chain.Coto, A, 80),
+            Q(Chain.Carrefour, A, 81), Q(Chain.Carrefour, C, 20),
+        ]);
+
+        var coto = r.Options.FirstOrDefault(o => Names(o) == "Coto");
+        if (coto is not null) Assert.False(r.IsEligible(coto));
+        Assert.True(r.Recommended!.IsComplete);
+        Assert.Equal("Carrefour", Names(r.Recommended));                  // 101 en un solo lugar
     }
 
     [Fact]

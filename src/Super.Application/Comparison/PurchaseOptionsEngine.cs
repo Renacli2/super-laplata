@@ -3,157 +3,216 @@ using Super.Domain;
 namespace Super.Application.Comparison;
 
 /// <summary>
-/// Una forma de hacer la compra: en qué supermercados y qué llevar en cada uno.
-/// Cada producto va al supermercado más barato entre los de la opción que lo venden.
+/// Un "presupuesto": hacer la compra en un supermercado, un par o los tres. Cada producto va al más barato de esos
+/// supermercados que lo vende. Lo que ninguno de ellos vende (faltantes) se completa en la cadena donde está más barato,
+/// para poder comparar todas las opciones por lo que cuesta la lista entera.
 /// </summary>
-/// <param name="Stores">Supermercados que se visitan (los que tienen al menos un producto asignado), en orden.</param>
-/// <param name="Total">Suma de lo que se compra (sin los productos que faltan).</param>
-/// <param name="Plan">Qué llevar en cada supermercado.</param>
-/// <param name="MissingEans">Productos que ninguno de estos supermercados vende (pero sí otro).</param>
+/// <param name="Stores">Supermercados del presupuesto (los que tienen al menos un producto asignado).</param>
+/// <param name="Total">Lo que se compra en esos supermercados.</param>
+/// <param name="Plan">Qué llevar en cada uno de esos supermercados.</param>
+/// <param name="MissingEans">Productos que no vende ninguno de esos supermercados (pero sí otra cadena).</param>
+/// <param name="Complement">Dónde conviene comprar los faltantes: cada uno en la cadena donde está más barato.</param>
+/// <param name="MainStores">Supermercados con más del umbral de parada corta del valor de la compra (incluye el complemento).</param>
+/// <param name="ShortStops">Supermercados con una parte chica de la compra (hasta el umbral): "paradas cortas".</param>
+/// <param name="Effort">Vueltas: 1 por supermercado principal y 0,5 por parada corta.</param>
 public sealed record PurchaseOption(
     IReadOnlyList<Chain> Stores,
     decimal Total,
     IReadOnlyDictionary<Chain, IReadOnlyList<LineResult>> Plan,
-    IReadOnlyList<string> MissingEans)
+    IReadOnlyList<string> MissingEans,
+    IReadOnlyDictionary<Chain, IReadOnlyList<LineResult>> Complement,
+    IReadOnlyList<Chain> MainStores,
+    IReadOnlyList<Chain> ShortStops,
+    decimal Effort)
 {
     public bool IsComplete => MissingEans.Count == 0;
     public int StoreCount => Stores.Count;
+    public decimal ComplementTotal => Complement.Values.SelectMany(l => l).Sum(l => l.Total);
+
+    /// <summary>Lo que cuesta la lista entera con esta opción (incluye los faltantes a su menor precio).</summary>
+    public decimal FullTotal => Total + ComplementTotal;
+
+    /// <summary>Parte del valor de la compra que falta en esta opción (0,06 = 6 %).</summary>
+    public decimal MissingShare => FullTotal > 0m ? ComplementTotal / FullTotal : 0m;
 }
 
-/// <param name="Options">Primero las opciones completas, de la más barata a la más cara; después las incompletas.</param>
-/// <param name="Recommended">La de menos supermercados entre las que cuestan como mucho <paramref name="Threshold"/> más que la más barata.</param>
-/// <param name="Cheapest">La opción completa más barata.</param>
+/// <param name="Options">Todas las opciones, de la lista entera más barata a la más cara.</param>
+/// <param name="Recommended">La de menos vueltas entre las que cuestan como mucho <paramref name="Threshold"/> más que la más barata.</param>
+/// <param name="Cheapest">La opción con la lista entera más barata.</param>
 /// <param name="BestSingleStore">La compra completa más barata en un solo supermercado (null si ninguno tiene todo).</param>
-/// <param name="UnavailableEans">Productos que no vende ninguna cadena: no entran en ninguna opción.</param>
-/// <param name="InvalidCodes">Códigos que no son EAN comparables (inválidos o de peso variable).</param>
+/// <param name="ShortStopShare">Hasta qué parte del valor de la compra un supermercado cuenta como parada corta.</param>
 public sealed record PurchaseOptionsResult(
     IReadOnlyList<PurchaseOption> Options,
     PurchaseOption? Recommended,
     PurchaseOption? Cheapest,
     PurchaseOption? BestSingleStore,
     decimal Threshold,
+    decimal ShortStopShare,
     IReadOnlyList<string> UnavailableEans,
     IReadOnlyList<string> InvalidCodes)
 {
-    /// <summary>Cuánto más cuesta una opción que la más barata, como fracción (0,02 = 2 %).</summary>
+    /// <summary>Cuánto más cuesta la lista entera con una opción que con la más barata (0,02 = 2 %).</summary>
     public decimal? GapToCheapest(PurchaseOption option) =>
-        Cheapest is { Total: > 0m } c ? (option.Total - c.Total) / c.Total : null;
+        Cheapest is { FullTotal: > 0m } c ? (option.FullTotal - c.FullTotal) / c.FullTotal : null;
+
+    /// <summary>Si la opción puede recomendarse: completa, o le falta como mucho la parte de una parada corta.</summary>
+    public bool IsEligible(PurchaseOption option) => option.IsComplete || option.MissingShare <= ShortStopShare;
 }
 
 /// <summary>
-/// Arma las formas de hacer la compra con 1, 2 o 3 supermercados:
+/// Arma los presupuestos con 1, 2 o 3 supermercados y recomienda uno ponderando el gasto contra las vueltas:
 /// <list type="bullet">
-/// <item>cada supermercado solo;</item>
-/// <item>cada par, repartiendo cada producto al más barato de los dos;</item>
-/// <item>los tres, solo si sale más barato que cualquier opción completa de uno o dos supermercados.</item>
+/// <item>cada supermercado solo y cada par; los tres solo si salen más baratos que cualquier opción completa de uno o dos;</item>
+/// <item>todas se comparan por la lista entera (lo que falta, a su menor precio en otra cadena);</item>
+/// <item>un supermercado con hasta el 5 % del valor de la compra es una parada corta y cuenta media vuelta;</item>
+/// <item>se recomienda la de menos vueltas entre las que cuestan como mucho un 3 % más que la más barata
+/// (sin contar las que dejan afuera más del 5 % de la compra).</item>
 /// </list>
-/// Las opciones que terminan visitando los mismos supermercados con el mismo reparto se muestran una sola vez.
+/// Dos opciones que terminan siendo la misma compra (mismo producto en el mismo supermercado) se muestran una vez.
 /// </summary>
 public sealed class PurchaseOptionsEngine
 {
+    public const decimal DefaultShortStopShare = 0.05m;
+
     public PurchaseOptionsResult Compute(
         IEnumerable<CartLine> cart,
         IEnumerable<PriceQuote> quotes,
-        decimal threshold = ComparisonEngine.DefaultThreshold)
+        decimal threshold = ComparisonEngine.DefaultThreshold,
+        decimal shortStopShare = DefaultShortStopShare)
     {
         ArgumentNullException.ThrowIfNull(cart);
         ArgumentNullException.ThrowIfNull(quotes);
         if (threshold < 0m) throw new ArgumentOutOfRangeException(nameof(threshold), "El umbral no puede ser negativo.");
+        if (shortStopShare is < 0m or >= 0.5m)
+            throw new ArgumentOutOfRangeException(nameof(shortStopShare), "La parada corta va de 0 a 0,5.");
 
         var (available, unavailable, invalid) = Prepare(cart, quotes);
         var chains = Enum.GetValues<Chain>();
 
-        // Todos los subconjuntos no vacíos de cadenas (con 3 cadenas: 7).
         var candidates = new List<PurchaseOption>();
-        for (var mask = 1; mask < 1 << chains.Length; mask++)
+        if (available.Count > 0)
         {
-            var subset = chains.Where((_, i) => (mask & (1 << i)) != 0).ToList();
-            if (available.Count == 0) break;
-            var option = Build(subset, available);
-            if (option.StoreCount > 0) candidates.Add(option);   // una cadena que no vende nada de la lista no es opción
+            for (var mask = 1; mask < 1 << chains.Length; mask++)
+            {
+                var subset = chains.Where((_, i) => (mask & (1 << i)) != 0).ToList();
+                var option = Build(subset, available, shortStopShare);
+                if (option.StoreCount > 0) candidates.Add(option);   // una cadena que no vende nada de la lista no es opción
+            }
         }
 
-        // Una misma compra puede salir de varios subconjuntos (p. ej. un par donde uno de los dos nunca es más barato):
-        // se deja una sola, la del subconjunto más chico.
+        // Misma compra por dos caminos (p. ej. "COTO + lo que falta en Changomás" y el par COTO + Changomás cuando a
+        // Changomás solo va lo que falta): se deja la completa; si ninguna lo es, la de menos supermercados.
         var unique = candidates
-            .GroupBy(Key)
-            .Select(g => g.First())
+            .GroupBy(FullKey)
+            .Select(g => g.OrderBy(o => o.IsComplete ? 0 : 1).ThenBy(o => o.StoreCount).First())
             .ToList();
 
-        var complete = unique.Where(o => o.IsComplete).ToList();
-        var upToTwo = complete.Where(o => o.StoreCount <= 2).ToList();
-        var bestUpToTwo = upToTwo.Count > 0 ? upToTwo.Min(o => o.Total) : (decimal?)null;
+        // Tres supermercados: solo si mejora a todas las opciones completas de uno o dos.
+        var bestUpToTwo = unique.Where(o => o.IsComplete && o.StoreCount <= 2).Select(o => (decimal?)o.FullTotal).Min();
+        unique.RemoveAll(o => o.StoreCount >= 3 && bestUpToTwo is { } b && o.FullTotal >= b);
 
-        // Tres supermercados: solo si mejora a todas las opciones de uno o dos.
-        complete.RemoveAll(o => o.StoreCount >= 3 && bestUpToTwo is { } b && o.Total >= b);
-
-        var orderedComplete = complete
-            .OrderBy(o => o.Total)
-            .ThenBy(o => o.StoreCount)
+        var ordered = unique
+            .OrderBy(o => o.FullTotal)
+            .ThenBy(o => o.Effort)
+            .ThenBy(o => o.IsComplete ? 0 : 1)
             .ThenBy(o => string.Join(",", o.Stores.Select(s => (int)s)))
             .ToList();
 
-        var incomplete = unique
-            .Where(o => !o.IsComplete && o.StoreCount <= 2)
-            .OrderBy(o => o.MissingEans.Count)
-            .ThenBy(o => o.StoreCount)
-            .ThenBy(o => o.Total)
-            .ToList();
-
-        var cheapest = orderedComplete.FirstOrDefault();
+        var cheapest = ordered.FirstOrDefault();
+        var eligible = ordered.Where(o => o.IsComplete || o.MissingShare <= shortStopShare).ToList();
         PurchaseOption? recommended = null;
-        if (cheapest is not null)
+        if (cheapest is not null && eligible.Count > 0)
         {
-            var limit = cheapest.Total * (1m + threshold);
-            recommended = orderedComplete
-                .Where(o => o.Total <= limit)
-                .OrderBy(o => o.StoreCount)
-                .ThenBy(o => o.Total)
-                .First();
+            var limit = cheapest.FullTotal * (1m + threshold);
+            recommended = eligible
+                .Where(o => o.FullTotal <= limit)
+                .OrderBy(o => o.Effort)
+                .ThenBy(o => o.FullTotal)
+                .ThenBy(o => o.MainStores.Count + o.ShortStops.Count)
+                .FirstOrDefault()
+                ?? eligible.First();
         }
 
-        var bestSingle = orderedComplete.FirstOrDefault(o => o.StoreCount == 1);
-
         return new PurchaseOptionsResult(
-            [.. orderedComplete, .. incomplete],
+            ordered,
             recommended,
             cheapest,
-            bestSingle,
+            ordered.FirstOrDefault(o => o.IsComplete && o.StoreCount == 1),
             threshold,
+            shortStopShare,
             unavailable,
             invalid);
     }
 
-    private static PurchaseOption Build(IReadOnlyList<Chain> subset, IReadOnlyList<Item> items)
+    private static PurchaseOption Build(IReadOnlyList<Chain> subset, IReadOnlyList<Item> items, decimal shortStopShare)
     {
         var lines = new List<LineResult>();
+        var complement = new List<LineResult>();
         var missing = new List<string>();
         foreach (var item in items)
         {
-            var best = subset
-                .Where(item.Prices.ContainsKey)
-                .Select(c => (Chain: c, Price: item.Prices[c]))
-                .OrderBy(p => p.Price)
-                .ThenBy(p => (int)p.Chain)
-                .Cast<(Chain Chain, decimal Price)?>()
-                .FirstOrDefault();
-
-            if (best is { } b) lines.Add(new LineResult(item.Ean, item.Quantity, b.Chain, b.Price));
-            else missing.Add(item.Ean);
+            if (Cheapest(item, subset) is { } inSubset)
+            {
+                lines.Add(new LineResult(item.Ean, item.Quantity, inSubset.Chain, inSubset.Price));
+            }
+            else
+            {
+                missing.Add(item.Ean);
+                var anywhere = Cheapest(item, item.Prices.Keys.ToList())!.Value;
+                complement.Add(new LineResult(item.Ean, item.Quantity, anywhere.Chain, anywhere.Price));
+            }
         }
 
-        var plan = lines
+        var plan = Group(lines);
+        var complementPlan = Group(complement);
+
+        // Peso de cada supermercado en la compra entera (lo propio + lo que se completa ahí).
+        var full = lines.Concat(complement).ToList();
+        var fullTotal = full.Sum(l => l.Total);
+        var shares = full
+            .GroupBy(l => l.Chain)
+            .ToDictionary(g => g.Key, g => fullTotal > 0m ? g.Sum(l => l.Total) / fullTotal : 0m);
+        var main = shares.Where(s => s.Value > shortStopShare).Select(s => s.Key).OrderBy(c => (int)c).ToList();
+        var shortStops = shares.Where(s => s.Value <= shortStopShare).Select(s => s.Key).OrderBy(c => (int)c).ToList();
+        if (main.Count == 0 && shortStops.Count > 0)
+        {
+            // Imposible con hasta 3 cadenas y umbral < 1/3, pero por las dudas el más grande es el principal.
+            var biggest = shares.MaxBy(s => s.Value).Key;
+            main.Add(biggest);
+            shortStops.Remove(biggest);
+        }
+
+        return new PurchaseOption(
+            plan.Keys.ToList(),
+            lines.Sum(l => l.Total),
+            plan,
+            missing,
+            complementPlan,
+            main,
+            shortStops,
+            main.Count + 0.5m * shortStops.Count);
+    }
+
+    private static (Chain Chain, decimal Price)? Cheapest(Item item, IEnumerable<Chain> chains) =>
+        chains
+            .Where(item.Prices.ContainsKey)
+            .Select(c => (Chain: c, Price: item.Prices[c]))
+            .OrderBy(p => p.Price)
+            .ThenBy(p => (int)p.Chain)
+            .Cast<(Chain Chain, decimal Price)?>()
+            .FirstOrDefault();
+
+    private static IReadOnlyDictionary<Chain, IReadOnlyList<LineResult>> Group(IEnumerable<LineResult> lines) =>
+        lines
             .GroupBy(l => l.Chain)
             .OrderBy(g => (int)g.Key)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<LineResult>)g.ToList());
 
-        return new PurchaseOption(plan.Keys.ToList(), lines.Sum(l => l.Total), plan, missing);
-    }
-
-    /// <summary>Identidad de una compra: qué producto va a qué supermercado, y qué falta.</summary>
-    private static string Key(PurchaseOption o) =>
-        string.Join(";", o.Plan.SelectMany(kv => kv.Value.Select(l => $"{l.Ean}@{(int)kv.Key}")).Order(StringComparer.Ordinal))
-        + "|" + string.Join(",", o.MissingEans);
+    /// <summary>Identidad de una compra: qué producto termina en qué supermercado (incluido lo que se completa).</summary>
+    private static string FullKey(PurchaseOption o) =>
+        string.Join(";", o.Plan.Concat(o.Complement)
+            .SelectMany(kv => kv.Value.Select(l => $"{l.Ean}@{(int)kv.Key}"))
+            .Order(StringComparer.Ordinal));
 
     private sealed record Item(string Ean, int Quantity, Dictionary<Chain, decimal> Prices);
 

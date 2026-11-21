@@ -685,17 +685,19 @@ button, input { font: inherit; color: inherit; }
     font-weight: 600;
 }
 
-/* Las que no completan la lista: visibles pero en segundo plano. */
-.options-note {
-    margin-top: var(--space-2);
+/* Las que no tienen todo: en su lugar del orden, con fondo de color suave para diferenciarlas. */
+.option.is-incomplete {
+    background: color-mix(in srgb, var(--tag) 16%, var(--surface));
+    border-color: color-mix(in srgb, var(--tag) 45%, var(--line));
+}
+
+.option-detail {
+    grid-column: 1 / -1;
     font-size: var(--step--1);
     color: var(--muted);
 }
 
-.option.is-incomplete { border-style: dashed; background: transparent; color: var(--muted); }
-.option.is-incomplete .option-stores { font-weight: 500; }
-.option.is-incomplete .dot { opacity: 0.55; }
-.option.is-incomplete.is-selected { border-style: solid; color: var(--ink); }
+.option-missing { color: var(--ink); }
 
 .plan-missing { --chain: var(--line); }
 .link-button.inline { margin: 0; padding: 0; }

@@ -28,15 +28,11 @@ else
     var r = _result;
     var rec = r.Recommended;
     var selected = _selected ?? rec;
-    var complete = r.Options.Where(o => o.IsComplete).ToList();
-    var incomplete = r.Options.Where(o => !o.IsComplete).ToList();
 
     <section class="tag" aria-labelledby="verdict">
-        <h1 id="verdict" class="tag-verdict">
-            @(rec.StoreCount == 1 ? $"Comprá todo en {StoreList(rec)}" : $"Comprá en {StoreList(rec)}")
-        </h1>
-        <p class="tag-price" aria-label="Total @Format.Money(rec.Total)">
-            <span class="tag-currency">$</span><span class="tag-amount">@Format.Amount(decimal.Truncate(rec.Total))</span><span class="tag-cents">@Format.Cents(rec.Total)</span>
+        <h1 id="verdict" class="tag-verdict">@Verdict(rec)</h1>
+        <p class="tag-price" aria-label="Total @Format.Money(rec.FullTotal)">
+            <span class="tag-currency">$</span><span class="tag-amount">@Format.Amount(decimal.Truncate(rec.FullTotal))</span><span class="tag-cents">@Format.Cents(rec.FullTotal)</span>
         </p>
         @foreach (var line in Weighting(r))
         {
@@ -46,42 +42,34 @@ else
 
     <section aria-labelledby="options-title">
         <h2 id="options-title" class="section-title">Opciones de compra</h2>
+        <p class="fine-print">Todas por la lista entera. Las de fondo de color no tienen todo: lo que falta se suma a su menor precio en otro supermercado.</p>
         <ul class="options" role="radiogroup" aria-label="Opciones de compra">
-            @foreach (var o in complete)
+            @foreach (var o in r.Options)
             {
                 <li>
                     <button type="button" role="radio" aria-checked="@(o == selected ? "true" : "false")"
-                            aria-label="@OptionLabel(r, o)" class="option @(o == selected ? "is-selected" : "")" @onclick="() => _selected = o">
+                            aria-label="@OptionLabel(r, o)" @onclick="() => _selected = o"
+                            class="option @(o.IsComplete ? "" : "is-incomplete") @(o == selected ? "is-selected" : "")">
                         <span class="option-stores">
-                            @foreach (var s in o.Stores) { <span class="dot @Format.ChainClass(s.ToString())" aria-hidden="true"></span> }
-                            @StoreNames(o, " + ")
+                            @foreach (var s in o.IsComplete ? o.MainStores.Concat(o.ShortStops) : o.Stores)
+                            {
+                                <span class="dot @Format.ChainClass(s.ToString())" aria-hidden="true"></span>
+                            }
+                            @Title(o)
                         </span>
-                        <span class="option-total">@Format.Money(o.Total)</span>
+                        <span class="option-total">@Format.Money(o.FullTotal)</span>
+                        @if (!o.IsComplete)
+                        {
+                            <span class="option-detail">@Format.Money(o.Total) en @StoreList(o)</span>
+                            <span class="option-detail option-missing">@MissingSummary(o)</span>
+                        }
                         <span class="option-diff">
                             @if (o == r.Cheapest) { <text>La más barata</text> }
-                            else { <text>@Format.Money(o.Total - r.Cheapest!.Total) más (@Format.Percent(r.GapToCheapest(o)!.Value))</text> }
+                            else { <text>@Format.Money(o.FullTotal - r.Cheapest!.FullTotal) más (@Format.Percent(r.GapToCheapest(o)!.Value))</text> }
                             @if (o == rec) { <span class="badge">Recomendada</span> }
                         </span>
                     </button>
                 </li>
-            }
-            @if (incomplete.Count > 0)
-            {
-                <li class="options-note">No completan la lista</li>
-                @foreach (var o in incomplete)
-                {
-                    <li>
-                        <button type="button" role="radio" aria-checked="@(o == selected ? "true" : "false")"
-                                aria-label="@OptionLabel(r, o)" class="option is-incomplete @(o == selected ? "is-selected" : "")" @onclick="() => _selected = o">
-                            <span class="option-stores">
-                                @foreach (var s in o.Stores) { <span class="dot @Format.ChainClass(s.ToString())" aria-hidden="true"></span> }
-                                @StoreNames(o, " + ")
-                            </span>
-                            <span class="option-total">@Format.Money(o.Total)</span>
-                            <span class="option-diff">Falta@(o.MissingEans.Count == 1 ? "" : "n") @Format.Products(o.MissingEans.Count)</span>
-                        </button>
-                    </li>
-                }
             }
         </ul>
     </section>
@@ -90,7 +78,7 @@ else
         <h2 id="plan-title" class="section-title">Qué llevar</h2>
         @if (selected != rec)
         {
-            <p class="fine-print">Estás viendo la opción @StoreNames(selected, " + "). <button type="button" class="link-button inline" @onclick="() => _selected = null">Volver a la recomendada</button></p>
+            <p class="fine-print">Estás viendo la opción @Title(selected). <button type="button" class="link-button inline" @onclick="() => _selected = null">Volver a la recomendada</button></p>
         }
         @if (Cart.InCartCount > 0)
         {
@@ -104,30 +92,17 @@ else
             <p class="fine-print">Tildá cada producto cuando lo pongas en el changuito. Lo tildado se mantiene aunque cambies de opción o agregues productos.</p>
         }
 
-        @foreach (var (chain, lines) in selected.Plan)
+        @foreach (var (chain, lines, heading) in PlanGroups(selected))
         {
             <div class="plan @Format.ChainClass(chain.ToString())">
                 <h3 class="plan-head">
-                    <span>@chain.DisplayName()</span>
+                    <span>@heading</span>
                     <span>@Format.Money(lines.Sum(l => l.Total))</span>
                 </h3>
                 <ul class="plan-lines">
                     @foreach (var line in lines)
                     {
                         @PlanLine(line.Ean, line.Quantity, line.Total)
-                    }
-                </ul>
-            </div>
-        }
-
-        @if (selected.MissingEans.Count > 0)
-        {
-            <div class="plan plan-missing">
-                <h3 class="plan-head"><span>No lo venden en @StoreNames(selected, " ni ")</span></h3>
-                <ul class="plan-lines">
-                    @foreach (var ean in selected.MissingEans)
-                    {
-                        @PlanLine(ean, Item(ean)?.Quantity ?? 1, null)
                     }
                 </ul>
             </div>
@@ -218,27 +193,81 @@ else
 
     private CartItem? Item(string ean) => Cart.Items.FirstOrDefault(i => Ean.Normalize(i.Ean) == ean);
 
-    private static string StoreNames(PurchaseOption o, string separator) =>
-        string.Join(separator, o.Stores.Select(s => s.DisplayName()));
-
     /// <summary>"Carrefour", "Carrefour y COTO", "Carrefour, Changomás y COTO".</summary>
-    private static string StoreList(PurchaseOption o)
+    private static string Join(IEnumerable<Chain> chains)
     {
-        var names = o.Stores.Select(s => s.DisplayName()).ToList();
+        var names = chains.Select(s => s.DisplayName()).ToList();
         return names.Count <= 1 ? string.Concat(names) : string.Join(", ", names[..^1]) + " y " + names[^1];
     }
 
+    private static string StoreList(PurchaseOption o) => Join(o.Stores);
+
     private static string Supermarkets(int count) => count == 1 ? "1 supermercado" : $"{count} supermercados";
+
+    /// <summary>"dos compras grandes", "dos compras grandes y una parada corta".</summary>
+    private static string Trips(PurchaseOption o)
+    {
+        string[] words = ["", "una", "dos", "tres"];
+        var main = o.MainStores.Count == 1 ? "una compra grande" : $"{words[o.MainStores.Count]} compras grandes";
+        var shorts = o.ShortStops.Count switch { 0 => "", 1 => " y una parada corta", var n => $" y {words[n]} paradas cortas" };
+        return main + shorts;
+    }
+
+    private static int ItemsIn(PurchaseOption o, Chain chain) =>
+        (o.Plan.TryGetValue(chain, out var a) ? a.Count : 0) + (o.Complement.TryGetValue(chain, out var b) ? b.Count : 0);
+
+    private static decimal ValueIn(PurchaseOption o, Chain chain) =>
+        (o.Plan.TryGetValue(chain, out var a) ? a.Sum(l => l.Total) : 0m)
+        + (o.Complement.TryGetValue(chain, out var b) ? b.Sum(l => l.Total) : 0m);
+
+    /// <summary>Nombre de la opción: "Carrefour + COTO", "COTO + parada corta en Changomás", o los del presupuesto si le falta algo.</summary>
+    private static string Title(PurchaseOption o)
+    {
+        if (!o.IsComplete) return string.Join(" + ", o.Stores.Select(s => s.DisplayName()));
+        var main = string.Join(" + ", o.MainStores.Select(s => s.DisplayName()));
+        return o.ShortStops.Count == 0 ? main : $"{main} + parada corta en {Join(o.ShortStops)}";
+    }
+
+    /// <summary>"Falta 1 producto (11,3 % de la compra): $ 3.158 en Changomás".</summary>
+    private static string MissingSummary(PurchaseOption o)
+    {
+        var where = string.Join(", ", o.Complement.Select(kv => $"{Format.Money(kv.Value.Sum(l => l.Total))} en {kv.Key.DisplayName()}"));
+        var verb = o.MissingEans.Count == 1 ? "Falta" : "Faltan";
+        return $"{verb} {Format.Products(o.MissingEans.Count)} ({Format.Percent(o.MissingShare)} de la compra): {where}";
+    }
+
+    private static string Verdict(PurchaseOption o)
+    {
+        if (!o.IsComplete)
+            return $"Comprá en {StoreList(o)} y lo que falta en {Join(o.Complement.Keys)}";
+        if (o.ShortStops.Count > 0)
+        {
+            var items = o.ShortStops.Sum(s => ItemsIn(o, s));
+            return $"Comprá en {Join(o.MainStores)} y pasá por {Join(o.ShortStops)} por {Format.Products(items)}";
+        }
+        return o.MainStores.Count == 1 ? $"Comprá todo en {Join(o.MainStores)}" : $"Comprá en {Join(o.MainStores)}";
+    }
+
+    /// <summary>Grupos de "Qué llevar": los supermercados del presupuesto y después donde se completa lo que falta.</summary>
+    private static IEnumerable<(Chain Chain, IReadOnlyList<LineResult> Lines, string Heading)> PlanGroups(PurchaseOption o)
+    {
+        foreach (var (chain, lines) in o.Plan.OrderByDescending(kv => kv.Value.Sum(l => l.Total)))
+            yield return (chain, lines, o.ShortStops.Contains(chain) ? $"{chain.DisplayName()} (parada corta)" : chain.DisplayName());
+        foreach (var (chain, lines) in o.Complement)
+            yield return (chain, lines, $"{chain.DisplayName()}: lo que falta en {StoreList(o)}");
+    }
 
     private static string OptionLabel(PurchaseOptionsResult r, PurchaseOption o)
     {
-        var detail = !o.IsComplete ? $"faltan {Format.Products(o.MissingEans.Count)}"
-            : o == r.Cheapest ? "la más barata"
-            : $"{Format.Money(o.Total - r.Cheapest!.Total)} más";
-        return $"{StoreList(o)}: {Format.Money(o.Total)}, {detail}{(o == r.Recommended ? ", recomendada" : "")}";
+        var detail = o == r.Cheapest ? "la más barata" : $"{Format.Money(o.FullTotal - r.Cheapest!.FullTotal)} más";
+        var missing = o.IsComplete ? "" : $", {MissingSummary(o)}";
+        return $"{Title(o)}: {Format.Money(o.FullTotal)}, {detail}{missing}{(o == r.Recommended ? ", recomendada" : "")}";
     }
 
-    /// <summary>Ponderación de la recomendación: cuánto se ahorra o se resigna según a cuántos supermercados se va.</summary>
+    /// <summary>
+    /// Ponderación de la recomendación: lo que cuesta la opción más barata (si no es la recomendada), lo que costaría
+    /// hacer menos vueltas, y el peso de la parada corta o de lo que falta.
+    /// </summary>
     private static IEnumerable<string> Weighting(PurchaseOptionsResult r)
     {
         var rec = r.Recommended!;
@@ -246,37 +275,61 @@ else
 
         if (cheapest != rec)
         {
-            yield return $"Yendo a {Supermarkets(cheapest.StoreCount)} ({StoreNames(cheapest, " + ")}) ahorrarías " +
-                         $"{Format.Money(rec.Total - cheapest.Total)} ({Format.Percent(r.GapToCheapest(rec)!.Value)}): " +
-                         $"no vale la vuelta extra por menos del {Format.Percent(r.Threshold)}.";
+            yield return $"La opción más barata ({Title(cheapest)}) cuesta {Format.Money(rec.FullTotal - cheapest.FullTotal)} menos " +
+                         $"({Format.Percent(r.GapToCheapest(rec)!.Value)}): por menos del {Format.Percent(r.Threshold)} conviene la más simple.";
+
+            // Opciones intermedias: más baratas que la recomendada pero con más vueltas (la mejor de cada nivel).
+            var between = r.Options
+                .Where(o => o != cheapest && r.IsEligible(o) && o.Effort > rec.Effort && o.FullTotal < rec.FullTotal)
+                .GroupBy(o => o.Effort)
+                .OrderBy(g => g.Key)
+                .Select(g => g.MinBy(o => o.FullTotal)!);
+            foreach (var alt in between)
+            {
+                var saving = rec.FullTotal - alt.FullTotal;
+                yield return $"{Title(alt)} cuesta {Format.Money(saving)} menos ({Format.Percent(saving / rec.FullTotal)}), " +
+                             $"pero con {Trips(alt)}.";
+            }
         }
 
-        // Lo que costaría ir a menos supermercados: la mejor opción completa con cada cantidad menor.
-        var fewer = Enumerable.Range(1, rec.StoreCount - 1)
-            .Reverse()
-            .Select(k => r.Options.FirstOrDefault(o => o.IsComplete && o.StoreCount == k))
-            .OfType<PurchaseOption>()
+        if (!rec.IsComplete)
+        {
+            yield return $"{MissingSummary(rec)}.";
+        }
+        else
+        {
+            foreach (var s in rec.ShortStops)
+            {
+                var value = ValueIn(rec, s);
+                yield return $"En {s.DisplayName()} llevás {Format.Products(ItemsIn(rec, s))} por {Format.Money(value)} " +
+                             $"({Format.Percent(value / rec.FullTotal)} de la compra).";
+            }
+        }
+
+        // Lo que costaría hacer menos vueltas: la mejor opción recomendable con cada cantidad menor de vueltas.
+        var simpler = r.Options
+            .Where(o => r.IsEligible(o) && o.Effort < rec.Effort)
+            .GroupBy(o => o.Effort)
+            .OrderByDescending(g => g.Key)
+            .Select(g => g.MinBy(o => o.FullTotal)!)
             .ToList();
-        foreach (var alt in fewer)
+        foreach (var alt in simpler)
         {
-            var extra = alt.Total - rec.Total;
-            var what = alt.StoreCount == 1
-                ? $"Comprar todo en {StoreList(alt)}, el mejor de un solo supermercado,"
-                : $"La mejor opción con {Supermarkets(alt.StoreCount)} ({StoreNames(alt, " + ")})";
-            yield return $"{what} cuesta {Format.Money(extra)} más ({Format.Percent(extra / rec.Total)}).";
-        }
-        if (rec.StoreCount > 1 && r.BestSingleStore is null)
-        {
-            yield return "Ningún supermercado tiene toda la lista: así la completás gastando lo menos posible.";
-        }
-        if (rec.StoreCount == 1 && cheapest == rec)
-        {
-            yield return "Es la opción más barata: repartir la compra no ahorra nada.";
+            var extra = alt.FullTotal - rec.FullTotal;
+            var what = alt.IsComplete && alt.MainStores.Count == 1 && alt.ShortStops.Count == 0
+                ? $"Comprar todo en {Join(alt.MainStores)}"
+                : Title(alt);
+            yield return $"{what} cuesta {Format.Money(extra)} más ({Format.Percent(extra / rec.FullTotal)}).";
         }
 
-        var priciest = r.Options.Where(o => o.IsComplete).MaxBy(o => o.Total);
-        if (priciest is not null && priciest.Total > rec.Total)
-            yield return $"Frente a la opción más cara de la lista gastás {Format.Money(priciest.Total - rec.Total)} menos.";
+        if (rec.Effort > 1 && r.BestSingleStore is null && simpler.Count == 0)
+            yield return "Ningún supermercado tiene toda la lista.";
+        if (rec.Effort == 1 && cheapest == rec)
+            yield return "Es la opción más barata: repartir la compra no ahorra nada.";
+
+        var priciest = r.Options.MaxBy(o => o.FullTotal);
+        if (priciest is not null && priciest.FullTotal > rec.FullTotal)
+            yield return $"Frente a la opción más cara ({Title(priciest)}) gastás {Format.Money(priciest.FullTotal - rec.FullTotal)} menos.";
     }
 
     public void Dispose() => Cart.Changed -= StateHasChanged;

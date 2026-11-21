@@ -630,3 +630,72 @@ button, input { font: inherit; color: inherit; }
 }
 
 .in-cart::before { content: "✓ "; color: var(--ink); }
+
+/* ---------- Opciones de compra ---------- */
+
+.options { display: grid; gap: var(--space-2); }
+
+.option {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-1) var(--space-4);
+    align-items: baseline;
+    padding: var(--space-3) var(--space-4);
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    text-align: left;
+    cursor: pointer;
+}
+
+.option.is-selected { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+.option-stores { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); font-weight: 600; }
+.option-total {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--step-1);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.option-diff {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--step--1);
+    color: var(--muted);
+}
+
+.dot {
+    display: inline-block;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 50%;
+    background: var(--chain);
+}
+
+.badge {
+    padding: 0 var(--space-2);
+    border-radius: 999px;
+    background: var(--tag);
+    color: var(--tag-ink);
+    font-weight: 600;
+}
+
+/* Las que no completan la lista: visibles pero en segundo plano. */
+.options-note {
+    margin-top: var(--space-2);
+    font-size: var(--step--1);
+    color: var(--muted);
+}
+
+.option.is-incomplete { border-style: dashed; background: transparent; color: var(--muted); }
+.option.is-incomplete .option-stores { font-weight: 500; }
+.option.is-incomplete .dot { opacity: 0.55; }
+.option.is-incomplete.is-selected { border-style: solid; color: var(--ink); }
+
+.plan-missing { --chain: var(--line); }
+.link-button.inline { margin: 0; padding: 0; }

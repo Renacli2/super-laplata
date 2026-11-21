@@ -165,8 +165,14 @@ Los precios de $0,10 de Changomás están todos en esos códigos, por eso "preci
 - SEPA rellena con ceros a 13 dígitos; la cámara lee el código original → siempre se compara normalizado.
 - Códigos de 13 dígitos que empiezan con `2` = peso variable → ítems libres, no se comparan.
 - Precio de lista, mínimo entre las sucursales de La Plata (las promociones todavía no se aplican).
-- Brecha = (mejor total en una sola cadena − total repartido) / total repartido; si ≤ umbral → cadena única.
-- Una cadena solo puede ser "única" si tiene todos los ítems disponibles del carrito.
+- Opciones de compra (app, `PurchaseOptionsEngine`): cada supermercado solo, cada par y los tres. En cada opción, cada
+  producto va al más barato de esos supermercados que lo vende. Los tres solo aparecen si son más baratos que cualquier
+  opción completa de uno o dos; una opción que termina igual a otra con menos supermercados no se repite.
+- Recomendada: la de menos supermercados entre las completas que cuestan como mucho un 3 % más que la más barata.
+  La app muestra cuánto más costaría ir a menos supermercados (la mejor opción con cada cantidad).
+- Las opciones que no completan la lista se muestran al final, en gris, con lo que falta.
+- La API (`ComparisonEngine`) sigue con la regla anterior: brecha = (mejor cadena única − total repartido) / total
+  repartido; si ≤ umbral → cadena única.
 
 ## Pendiente (siguientes fases)
 

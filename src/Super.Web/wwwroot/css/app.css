@@ -620,6 +620,15 @@ button, input { font: inherit; color: inherit; }
 
 .progress .link-button { margin-top: 0; padding: 0; }
 
+/* ---------- Confirmar la compra ---------- */
+
+.confirm { display: grid; gap: var(--space-3); justify-items: start; }
+.confirm .fine-print { margin: 0; }
+.confirm-box { display: grid; gap: var(--space-2); max-width: 34rem; }
+.confirm-box p { margin: 0; }
+.confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
+.purchase-done { margin-bottom: var(--space-4); }
+
 .missing .plan-line { list-style: none; }
 .missing li.plan-line::before { content: none; }
 

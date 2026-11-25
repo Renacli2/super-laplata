@@ -7,6 +7,25 @@
 
 <a class="back" href="">Volver a la lista</a>
 
+@if (_confirmed is { } done)
+{
+    <div class="notice purchase-done" role="status">
+        <p>
+            <strong>Compra confirmada.</strong>
+            Sacaste @Format.Products(done.Items.Count) de la lista@(done.EstimatedTotal > 0 ? $" ({Format.Money(done.EstimatedTotal)} según SEPA)" : "").
+            @(_remainingAfterPurchase > 0 ? $"{Remain(_remainingAfterPurchase)} para otra vuelta." : "")
+        </p>
+        @if (Cart.CanUndoPurchase)
+        {
+            <button type="button" class="link-button" @onclick="UndoPurchaseAsync">Deshacer</button>
+        }
+    </div>
+}
+else if (_purchaseUndone)
+{
+    <p class="notice" role="status">Listo: los productos volvieron a la lista, tildados como estaban.</p>
+}
+
 @if (_loading)
 {
     <h1 class="page-title">Comparando precios…</h1>
@@ -19,7 +38,7 @@ else if (_error is not null)
 }
 else if (_result is null || Cart.Count == 0 || _result.Recommended is null)
 {
-    <h1 class="page-title">@(Cart.Count == 0 ? "La lista está vacía" : "Ningún producto tiene precio")</h1>
+    <h1 class="page-title">@(Cart.Count > 0 ? "Ningún producto tiene precio" : _confirmed is not null ? "Compra terminada" : "La lista está vacía")</h1>
     <p class="cart-empty">Agregá productos o abrí los pedidos que te mandaron para ver en qué supermercado conviene comprar.</p>
     <a class="btn btn-primary" href="">Ir a la lista</a>
 }
@@ -145,6 +164,38 @@ else
         </section>
     }
 
+    @if (Cart.InCartCount > 0)
+    {
+        var remaining = Cart.Count - Cart.InCartCount;
+        <section class="confirm" aria-labelledby="confirm-title">
+            <h2 id="confirm-title" class="section-title">Terminar la compra</h2>
+            @if (!_confirming)
+            {
+                <p class="fine-print">
+                    Cuando pagues, confirmá la compra: lo tildado sale de la lista@(remaining > 0 ? " y lo que falta queda para otra vuelta" : "").
+                </p>
+                <button type="button" class="btn btn-primary" @onclick="() => _confirming = true">Confirmar compra</button>
+            }
+            else
+            {
+                <div class="notice confirm-box">
+                    <p>
+                        <strong>¿Sacar de la lista @Format.Products(Cart.InCartCount)?</strong>
+                        @if (ShoppingProgress.For(selected, picked).PickedTotal is > 0 and var pickedTotal)
+                        {
+                            <text> Suman @Format.Money(pickedTotal) según SEPA.</text>
+                        }
+                    </p>
+                    <p>@(remaining > 0 ? $"{Remain(remaining)} sin comprar en la lista." : "La lista queda vacía.")</p>
+                    <div class="confirm-actions">
+                        <button type="button" class="btn btn-primary" @onclick="() => ConfirmPurchaseAsync(selected)">Sí, confirmar</button>
+                        <button type="button" class="btn btn-quiet" @onclick="() => _confirming = false">Cancelar</button>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+
     <p class="fine-print">
         Precio de lista más bajo entre las sucursales de La Plata, según SEPA; las promociones todavía no se cuentan,
         así que lo que suma el changuito puede diferir un poco del ticket.
@@ -175,6 +226,36 @@ else
     private bool _loading = true;
     private int _equivalentCount;
     private decimal _equivalentSaving;
+    private bool _confirming;
+    private Purchase? _confirmed;
+    private int _remainingAfterPurchase;
+    private bool _purchaseUndone;
+
+    private async Task ConfirmPurchaseAsync(PurchaseOption option)
+    {
+        // Cadena y precio de cada producto según la opción que se estaba mirando (la del changuito).
+        var lines = option.Plan.Values.SelectMany(l => l)
+            .Concat(option.Complement.Values.SelectMany(l => l))
+            .GroupBy(l => l.Ean)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+        _confirming = false;
+        _purchaseUndone = false;
+        _confirmed = await Cart.ConfirmPurchaseAsync(lines);
+        _remainingAfterPurchase = Cart.Count;
+        await LoadAsync();   // lo que queda se compara de nuevo: la mejor opción puede ser otra
+    }
+
+    /// <summary>"Queda 1 producto", "Quedan 3 productos".</summary>
+    private static string Remain(int count) => $"{(count == 1 ? "Queda" : "Quedan")} {Format.Products(count)}";
+
+    private async Task UndoPurchaseAsync()
+    {
+        if (!await Cart.UndoPurchaseAsync()) return;
+        _confirmed = null;
+        _purchaseUndone = true;
+        await LoadAsync();
+    }
 
     protected override async Task OnInitializedAsync()
     {

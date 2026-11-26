@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
 
@@ -42,7 +42,7 @@ jobs:
           done
           echo "Datos del: $(grep -o '"date":"[^"]*"' site-data/version.json)"
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -62,9 +62,11 @@ jobs:
           # Sin esto, Jekyll ignora la carpeta _framework.
           touch .nojekyll
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: out/wwwroot
+          # Desde la v4 deja afuera los archivos que empiezan con punto: así sigue incluyendo .nojekyll.
+          include-hidden-files: true
 
   deploy:
     needs: build
@@ -74,4 +76,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

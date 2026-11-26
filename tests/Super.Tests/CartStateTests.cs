@@ -158,6 +158,22 @@ public class CartStateTests
     }
 
     [Fact]
+    public async Task AddMany_AddsEachWithItsQuantity_AndUnchecksWhatWasPicked()
+    {
+        var storage = new FakeStorage();
+        var cart = await NewCartAsync(storage);
+        await cart.AddAsync(Aceite);
+        await cart.SetInCartAsync(Aceite.Ean, true);
+
+        await cart.AddManyAsync([(Aceite, 2), (Kinder, 3)]);
+
+        var reopened = await NewCartAsync(storage);
+        Assert.Equal(3, reopened.Items.Single(i => i.Ean == Aceite.Ean).Quantity);
+        Assert.False(reopened.Items.Single(i => i.Ean == Aceite.Ean).InCart);   // hay que llevar más
+        Assert.Equal(3, reopened.Items.Single(i => i.Ean == Kinder.Ean).Quantity);
+    }
+
+    [Fact]
     public async Task ConfirmPurchase_RemovesCheckedItems_AndKeepsTheRestUnchecked()
     {
         var cart = await NewCartAsync(new FakeStorage());

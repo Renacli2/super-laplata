@@ -643,6 +643,8 @@ button, input { font: inherit; color: inherit; }
 
 .usual { display: grid; margin-bottom: var(--space-5); }
 .usual-item.is-missing .cart-text { opacity: 0.6; }
+.usual-all { justify-self: start; margin-bottom: var(--space-2); }
+.usual-why { display: block; color: var(--muted); font-style: italic; }
 
 /* ---------- Confirmar la compra ---------- */
 

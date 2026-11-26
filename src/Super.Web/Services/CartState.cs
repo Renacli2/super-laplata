@@ -100,6 +100,14 @@ public sealed class CartState(IJSRuntime js, TimeProvider time)
     public Task AddAsync(CatalogEntry product, int quantity = 1) =>
         AddCoreAsync(product.Ean, product, Math.Max(quantity, 1), from: null, save: true);
 
+    /// <summary>Agrega varios productos de una vez (los habituales), guardando una sola vez.</summary>
+    public async Task AddManyAsync(IEnumerable<(CatalogEntry Product, int Quantity)> products)
+    {
+        foreach (var (product, quantity) in products)
+            await AddCoreAsync(product.Ean, product, Math.Max(quantity, 1), from: null, save: false);
+        await SaveAsync();
+    }
+
     /// <summary>Suma un pedido recibido: acumula cantidades y anota quién lo pidió.</summary>
     public async Task AddOrderAsync(Order order, CatalogSearch catalog)
     {

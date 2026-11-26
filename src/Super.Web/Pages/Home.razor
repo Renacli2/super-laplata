@@ -67,11 +67,18 @@
         }
     </section>
 }
-else if (PendingFavorites() is { Count: > 0 } usual)
+else if (PendingUsual() is { Count: > 0 } usual)
 {
     var shown = _showAllUsual ? usual : usual.Take(UsualPreview).ToList();
+    var starred = usual.Where(u => u.IsStarred).ToList();
     <section class="usual" aria-labelledby="usual-title">
         <h2 id="usual-title" class="section-title">Tus habituales</h2>
+        @if (starred.Count >= 2)
+        {
+            <button type="button" class="btn btn-quiet usual-all" @onclick="() => AddAllStarredAsync(starred)">
+                Agregar los @starred.Count marcados
+            </button>
+        }
         <ul class="cart-list">
             @foreach (var f in shown)
             {
@@ -82,6 +89,10 @@ else if (PendingFavorites() is { Count: > 0 } usual)
                         <span class="cart-name">@(f.Quantity > 1 ? $"{f.Quantity} × " : "")@entry.Description</span>
                         <span class="cart-meta">
                             @Meta(entry.Brand, entry.Presentation)
+                            @if (!f.IsStarred)
+                            {
+                                <span class="usual-why">Sugerido: lo compraste @Times(f.TimesBought)</span>
+                            }
                             @if (missing)
                             {
                                 <span class="in-cart">No figura en los datos de hoy</span>
@@ -298,7 +309,8 @@ else if (PendingFavorites() is { Count: > 0 } usual)
         try
         {
             await Task.Delay(200, ct);
-            _results = _catalog.Search(_query, 20, Favorites.Eans);   // los habituales primero
+            // Los habituales primero: los marcados y los que se compran seguido.
+            _results = _catalog.Search(_query, 20, UsualProducts.PreferredEans(Favorites.Items, Cart.Purchases));
         }
         catch (OperationCanceledException) { }
     }
@@ -325,12 +337,20 @@ else if (PendingFavorites() is { Count: > 0 } usual)
         Show(marked ? $"{name} quedó entre tus habituales." : $"Sacaste {name} de tus habituales.");
     }
 
-    /// <summary>Habituales que todavía no están en la lista.</summary>
-    private List<FavoriteItem> PendingFavorites()
+    private async Task AddAllStarredAsync(List<UsualProduct> starred)
+    {
+        await Cart.AddManyAsync(starred.Select(u => (_catalog?.Find(u.Ean) ?? u.ToEntry(), u.Quantity)));
+        Show($"Agregaste tus {Format.Products(starred.Count)} habituales.");
+    }
+
+    /// <summary>Habituales (marcados y sugeridos por las compras) que todavía no están en la lista.</summary>
+    private List<UsualProduct> PendingUsual()
     {
         var inList = Cart.Items.Select(i => Ean.Normalize(i.Ean) ?? i.Ean).ToHashSet(StringComparer.Ordinal);
-        return Favorites.Items.Where(f => !inList.Contains(f.Ean)).ToList();
+        return UsualProducts.Build(Favorites.Items, Cart.Purchases, inList);
     }
+
+    private static string Times(int count) => count == 1 ? "1 vez" : $"{count} veces";
 
     /// <summary>Estrella para marcar o desmarcar un habitual (botón de dos estados).</summary>
     private RenderFragment Star(CatalogEntry product, int quantity = 1) => __builder =>

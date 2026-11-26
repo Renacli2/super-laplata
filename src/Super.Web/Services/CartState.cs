@@ -97,7 +97,8 @@ public sealed class CartState(IJSRuntime js, TimeProvider time)
 
     public bool Contains(string ean) => _items.Any(i => i.Ean == ean);
 
-    public Task AddAsync(CatalogEntry product) => AddCoreAsync(product.Ean, product, 1, from: null, save: true);
+    public Task AddAsync(CatalogEntry product, int quantity = 1) =>
+        AddCoreAsync(product.Ean, product, Math.Max(quantity, 1), from: null, save: true);
 
     /// <summary>Suma un pedido recibido: acumula cantidades y anota quién lo pidió.</summary>
     public async Task AddOrderAsync(Order order, CatalogSearch catalog)

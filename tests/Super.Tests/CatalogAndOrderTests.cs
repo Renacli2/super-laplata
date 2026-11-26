@@ -52,6 +52,22 @@ public class CatalogSearchTests
 
     [Fact]
     public void RespectsLimit() => Assert.Single(Catalog.Search("aceite", limit: 1));
+
+    [Fact]
+    public void PreferredProducts_ComeFirst_EvenBeyondTheLimit()
+    {
+        var preferred = new HashSet<string> { "7790360981059" };   // el de nombre más largo: sin preferencia sale segundo
+
+        Assert.Equal("7790360981042", Assert.Single(Catalog.Search("aceite", limit: 1)).Ean);
+        Assert.Equal("7790360981059", Assert.Single(Catalog.Search("aceite", limit: 1, preferred)).Ean);
+    }
+
+    [Fact]
+    public void PreferredProducts_ComeFirst_WhenSearchingByCode()
+    {
+        var preferred = new HashSet<string> { "7790360981059" };
+        Assert.Equal("7790360981059", Catalog.Search("779036098", preferred: preferred)[0].Ean);
+    }
 }
 
 public class OrderLinkTests

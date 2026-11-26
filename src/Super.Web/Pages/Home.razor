@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject DataStore Data
 @inject CartState Cart
+@inject FavoritesState Favorites
 @inject Settings Settings
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -55,11 +56,52 @@
                     <h2 class="result-name">@p.Description</h2>
                     <p class="result-meta">@Meta(p.Brand, p.Presentation)</p>
                 </div>
-                <button type="button" class="btn @(inCart ? "btn-quiet" : "btn-primary")" @onclick="() => AddAsync(p)"
-                        aria-label="@(inCart ? "Sumar uno más de" : "Agregar") @p.Description">
-                    @(inCart ? "Uno más" : "Agregar")
-                </button>
+                <div class="result-actions">
+                    @Star(p)
+                    <button type="button" class="btn @(inCart ? "btn-quiet" : "btn-primary")" @onclick="() => AddAsync(p)"
+                            aria-label="@(inCart ? "Sumar uno más de" : "Agregar") @p.Description">
+                        @(inCart ? "Uno más" : "Agregar")
+                    </button>
+                </div>
             </article>
+        }
+    </section>
+}
+else if (PendingFavorites() is { Count: > 0 } usual)
+{
+    var shown = _showAllUsual ? usual : usual.Take(UsualPreview).ToList();
+    <section class="usual" aria-labelledby="usual-title">
+        <h2 id="usual-title" class="section-title">Tus habituales</h2>
+        <ul class="cart-list">
+            @foreach (var f in shown)
+            {
+                var entry = _catalog?.Find(f.Ean) ?? f.ToEntry();
+                var missing = _catalog is not null && _catalog.Find(f.Ean) is null;
+                <li class="cart-item usual-item @(missing ? "is-missing" : "")">
+                    <div class="cart-text">
+                        <span class="cart-name">@(f.Quantity > 1 ? $"{f.Quantity} × " : "")@entry.Description</span>
+                        <span class="cart-meta">
+                            @Meta(entry.Brand, entry.Presentation)
+                            @if (missing)
+                            {
+                                <span class="in-cart">No figura en los datos de hoy</span>
+                            }
+                        </span>
+                    </div>
+                    <div class="result-actions">
+                        @Star(entry, f.Quantity)
+                        <button type="button" class="btn btn-quiet" @onclick="() => AddFavoriteAsync(entry, f.Quantity)"
+                                aria-label="@AddLabel(entry, f.Quantity)">Agregar</button>
+                    </div>
+                </li>
+            }
+        </ul>
+        @if (usual.Count > UsualPreview)
+        {
+            <button type="button" class="link-button" aria-expanded="@(_showAllUsual ? "true" : "false")"
+                    @onclick="() => _showAllUsual = !_showAllUsual">
+                @(_showAllUsual ? "Ver menos" : $"Ver los {usual.Count} habituales")
+            </button>
         }
     </section>
 }
@@ -103,6 +145,7 @@
                             }
                         </span>
                     </div>
+                    @Star(new CatalogEntry(item.Ean, item.Description, item.Brand, item.Presentation), item.Quantity)
                     <div class="stepper" role="group" aria-label="Cantidad de @item.Description">
                         <button type="button" @onclick="() => Cart.SetQuantityAsync(item.Ean, item.Quantity - 1)"
                                 aria-label="@(item.Quantity == 1 ? "Quitar" : "Uno menos")">@(item.Quantity == 1 ? "×" : "−")</button>
@@ -200,13 +243,19 @@
     private CancellationTokenSource? _searchCts;
     private EquivalentFinder? _equivalents;
     private string? _openEquivalents;
+    private bool _showAllUsual;
+
+    /// <summary>Habituales que se muestran antes de "Ver los N habituales".</summary>
+    private const int UsualPreview = 8;
 
     protected override async Task OnInitializedAsync()
     {
         Cart.Changed += StateHasChanged;
+        Favorites.Changed += StateHasChanged;
         Settings.Changed += StateHasChanged;
         await Settings.LoadAsync();
         await Cart.LoadAsync();
+        await Favorites.LoadAsync();
         try { _canScan = await JS.InvokeAsync<bool>("superApp.canScan"); }
         catch (JSException) { _canScan = false; }
 
@@ -249,7 +298,7 @@
         try
         {
             await Task.Delay(200, ct);
-            _results = _catalog.Search(_query, 20);
+            _results = _catalog.Search(_query, 20, Favorites.Eans);   // los habituales primero
         }
         catch (OperationCanceledException) { }
     }
@@ -259,6 +308,40 @@
         await Cart.AddAsync(product);
         Show($"Agregaste {product.Description.TrimEnd('.', ' ')}.");
     }
+
+    private async Task AddFavoriteAsync(CatalogEntry product, int quantity)
+    {
+        await Cart.AddAsync(product, quantity);
+        Show($"Agregaste {(quantity > 1 ? $"{quantity} de " : "")}{product.Description.TrimEnd('.', ' ')}.");
+    }
+
+    private static string AddLabel(CatalogEntry product, int quantity) =>
+        quantity > 1 ? $"Agregar {quantity} de {product.Description}" : $"Agregar {product.Description}";
+
+    private async Task ToggleFavoriteAsync(CatalogEntry product, int quantity)
+    {
+        var name = product.Description.TrimEnd('.', ' ');
+        var marked = await Favorites.ToggleAsync(product, quantity);
+        Show(marked ? $"{name} quedó entre tus habituales." : $"Sacaste {name} de tus habituales.");
+    }
+
+    /// <summary>Habituales que todavía no están en la lista.</summary>
+    private List<FavoriteItem> PendingFavorites()
+    {
+        var inList = Cart.Items.Select(i => Ean.Normalize(i.Ean) ?? i.Ean).ToHashSet(StringComparer.Ordinal);
+        return Favorites.Items.Where(f => !inList.Contains(f.Ean)).ToList();
+    }
+
+    /// <summary>Estrella para marcar o desmarcar un habitual (botón de dos estados).</summary>
+    private RenderFragment Star(CatalogEntry product, int quantity = 1) => __builder =>
+    {
+        var on = Favorites.IsFavorite(product.Ean);
+        <button type="button" class="star @(on ? "is-on" : "")" aria-pressed="@(on ? "true" : "false")"
+                aria-label="Habitual: @product.Description" title="@(on ? "Sacar de habituales" : "Marcar como habitual")"
+                @onclick="() => ToggleFavoriteAsync(product, quantity)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" /></svg>
+        </button>
+    };
 
     private async Task OnScannedAsync(string code)
     {
@@ -322,6 +405,7 @@
     public void Dispose()
     {
         Cart.Changed -= StateHasChanged;
+        Favorites.Changed -= StateHasChanged;
         Settings.Changed -= StateHasChanged;
         _searchCts?.Cancel();
     }

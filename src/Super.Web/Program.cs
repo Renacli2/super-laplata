@@ -12,5 +12,6 @@ builder.Services.AddScoped<DataStore>();
 builder.Services.AddScoped<Settings>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<CartState>();
+builder.Services.AddScoped<FavoritesState>();
 
 await builder.Build().RunAsync();

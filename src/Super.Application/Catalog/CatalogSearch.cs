@@ -31,15 +31,22 @@ public sealed class CatalogSearch
     public CatalogEntry? Find(string? code) =>
         Ean.Normalize(code) is { } ean && _byEan.TryGetValue(ean, out var entry) ? entry : null;
 
-    public IReadOnlyList<CatalogEntry> Search(string? query, int limit = 20)
+    /// <param name="preferred">
+    /// EAN que van primero entre los que coinciden (los habituales), antes de cortar en <paramref name="limit"/>:
+    /// así aparecen aunque haya muchos otros resultados.
+    /// </param>
+    public IReadOnlyList<CatalogEntry> Search(string? query, int limit = 20, IReadOnlySet<string>? preferred = null)
     {
         var q = (query ?? "").Trim();
         if (q.Length < 2 || limit <= 0) return [];
 
+        bool IsPreferred(CatalogEntry e) => preferred?.Contains(e.Ean) == true;
+
         if (q.All(char.IsAsciiDigit))
         {
             var exact = Find(q);
-            var partial = _entries.Where(e => e.Ean.Contains(q, StringComparison.Ordinal) && e != exact);
+            var partial = _entries.Where(e => e.Ean.Contains(q, StringComparison.Ordinal) && e != exact)
+                .OrderBy(e => IsPreferred(e) ? 0 : 1);   // OrderBy es estable: el resto queda en el orden del catálogo
             return (exact is null ? partial : partial.Prepend(exact)).Take(limit).ToList();
         }
 
@@ -57,7 +64,8 @@ public sealed class CatalogSearch
         }
 
         return hits
-            .OrderBy(i => _entries[i].Description.Length)
+            .OrderBy(i => IsPreferred(_entries[i]) ? 0 : 1)
+            .ThenBy(i => _entries[i].Description.Length)
             .ThenBy(i => _entries[i].Description, StringComparer.Ordinal)
             .Take(limit)
             .Select(i => _entries[i])

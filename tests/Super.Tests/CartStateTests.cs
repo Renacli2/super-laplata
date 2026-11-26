@@ -13,29 +13,6 @@ public class CartStateTests
     private static readonly CatalogEntry Kinder = new("0000040084107", "KINDER", "KINDER", "1 un");
     private static readonly CatalogSearch Catalog = new([Aceite, Kinder]);
 
-    /// <summary>localStorage de mentira, compartido entre instancias (como reabrir la app).</summary>
-    private sealed class FakeStorage : IJSRuntime
-    {
-        public Dictionary<string, string> Values { get; } = [];
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
-            InvokeAsync<TValue>(identifier, CancellationToken.None, args);
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
-        {
-            switch (identifier)
-            {
-                case "superApp.storageGet":
-                    return ValueTask.FromResult((TValue)(object?)Values.GetValueOrDefault((string)args![0]!)!);
-                case "superApp.storageSet":
-                    Values[(string)args![0]!] = (string)args[1]!;
-                    return ValueTask.FromResult(default(TValue)!);
-                default:
-                    throw new InvalidOperationException(identifier);
-            }
-        }
-    }
-
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
@@ -167,6 +144,17 @@ public class CartStateTests
         var item = Assert.Single(cart.Items);
         Assert.Equal(Kinder.Ean, item.Ean);
         Assert.Equal(3, item.Quantity);
+    }
+
+    [Fact]
+    public async Task Add_WithQuantity_AddsThatMany()
+    {
+        var cart = await NewCartAsync(new FakeStorage());
+        await cart.AddAsync(Aceite);
+
+        await cart.AddAsync(Aceite, quantity: 2);   // un habitual que se lleva de a 2
+
+        Assert.Equal(3, Assert.Single(cart.Items).Quantity);
     }
 
     [Fact]

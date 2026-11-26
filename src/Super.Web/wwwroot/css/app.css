@@ -256,7 +256,8 @@ button, input { font: inherit; color: inherit; }
 
 .result-text { grid-area: text; }
 .result-price { grid-area: price; display: flex; align-items: baseline; gap: var(--space-2); }
-.result .btn { grid-area: action; }
+.result .result-actions { grid-area: action; }
+.result-actions { flex: none; display: flex; align-items: center; gap: var(--space-2); justify-self: end; }
 
 .result-name { font-size: var(--step-0); font-weight: 500; line-height: 1.35; }
 .result-meta, .cart-meta, .price-where { font-size: var(--step--1); color: var(--muted); }
@@ -619,6 +620,29 @@ button, input { font: inherit; color: inherit; }
 }
 
 .progress .link-button { margin-top: 0; padding: 0; }
+
+/* ---------- Habituales ---------- */
+
+.star {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.star svg { width: 1.5rem; height: 1.5rem; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linejoin: round; }
+.star.is-on { color: var(--ink); }
+.star.is-on svg { fill: currentColor; }
+
+.usual { display: grid; margin-bottom: var(--space-5); }
+.usual-item.is-missing .cart-text { opacity: 0.6; }
 
 /* ---------- Confirmar la compra ---------- */
 
